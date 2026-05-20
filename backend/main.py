@@ -1,3 +1,4 @@
+from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, UploadFile, File
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -8,6 +9,8 @@ import os
 from analyzer import analyze_data
 
 app = FastAPI()
+
+app.mount("/charts", StaticFiles(directory="uploads"), name="charts")
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,16 +30,30 @@ def home():
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-
+   
     file_path = os.path.join(UPLOAD_FOLDER, file.filename)
 
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    insights, chart_path = analyze_data(file_path)
+    result = analyze_data(file_path)
+
+    insights = result["insights"]
+    chart_file = result["chart_path"]
+
+    chart_url = None
+    if chart_file:
+        chart_url = f"/charts/{os.path.basename(chart_file)}"
+
+    summary = {
+        "rows": result["rows"],
+        "columns": result["columns"]
+    }
 
     return {
-        "filename": file.filename,
+        "status": "success",
+        "file_name": file.filename,
+        "summary": summary,
         "insights": insights,
-        "chart": chart_path
+        "chart_url": chart_url
     }

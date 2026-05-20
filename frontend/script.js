@@ -23,5 +23,9 @@ window.uploadFile = async function () {
         output += `<p>${insight}</p>`;
     });
 
+    if (data.chart_url) {
+        output += `<img src="http://127.0.0.1:8000${data.chart_url}" width="400">`;
+    }
+
     document.getElementById("results").innerHTML = output;
 };

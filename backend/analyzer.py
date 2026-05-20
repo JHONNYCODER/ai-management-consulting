@@ -19,7 +19,9 @@ def analyze_data(file_path):
         df["Salary"].dropna().hist()
         plt.title("Salary Distribution")
 
-        chart_path = file_path.replace(".csv", "_salary.png")
+        filename = file_path.replace(".csv", "_salary.png")
+        chart_path = os.path.join("uploads", os.path.basename(filename))
+
         plt.savefig(chart_path)
         plt.close()
 
@@ -37,4 +39,11 @@ def analyze_data(file_path):
         else:
             insights.append("Performance is weak.")
 
-    return insights, chart_path
+    result = {
+        "rows": len(df),
+        "columns": len(df.columns),
+        "insights": insights,
+        "chart_path": chart_path
+    }
+
+    return result
