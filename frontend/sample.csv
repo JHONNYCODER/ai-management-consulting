@@ -1,0 +1,9 @@
+EmployeeID,Department,Salary,PerformanceScore,ExperienceYears
+1,Sales,50000,7,2
+2,Sales,60000,8,3
+3,HR,45000,6,1
+4,IT,80000,9,5
+5,IT,90000,9,6
+6,Marketing,55000,7,2
+7,Marketing,58000,8,3
+8,Finance,75000,9,4
