@@ -41,8 +41,11 @@ async def upload_file(file: UploadFile = File(...)):
 
         chart_url = None
 
-        if result["chart_path"]:
-            chart_url = "/charts/" + os.path.basename(result["chart_path"])
+        chart_path = result.get("chart_path") or result.get("chart_url")
+
+        chart_url = None
+        if chart_path:
+            chart_url = "/charts/" + os.path.basename(chart_path)
 
         return {
             "status": "success",
@@ -53,6 +56,8 @@ async def upload_file(file: UploadFile = File(...)):
                     "columns": result["columns"]
                 },
                 "insights": result["insights"],
+                "profile": result["profile"],
+                "correlations": result["correlations"],
                 "chart_url": chart_url
             }
         }
