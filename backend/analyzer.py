@@ -1,49 +1,109 @@
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import os
 
+def generate_chart(df, column, file_path):
+    """
+    Generates a histogram chart for a numeric column
+    """
+    plt.figure()
+
+    df[column].dropna().hist()
+
+    plt.title(f"{column} Distribution")
+
+    file_name = os.path.basename(file_path).replace(".csv", "_chart.png")
+
+    chart_fs_path = os.path.join("uploads", file_name)
+
+    plt.figure()
+    df[column].dropna().hist()
+    plt.title(f"{column} Distribution")
+
+    plt.savefig(chart_fs_path)
+    plt.close()
+
+    return f"charts/{file_name}"
+
+
 def analyze_data(file_path):
+    """
+    Clean pipeline:
+    - Load CSV
+    - Detect numeric columns
+    - Generate summary + metrics
+    - Create chart
+    - Return JSON-safe response
+    """
+
     df = pd.read_csv(file_path)
 
-    insights = []
+    if df.empty:
+        return {
+            "status": "error",
+            "message": "CSV file is empty.",
+            "rows": 0,
+            "columns": 0,
+            "insights": {
+                "summary": [],
+                "metrics": []
+            },
+            "chart_path": None
+        }
+    insights = {
+        "summary": [],
+        "metrics": []
+    }
+    # Convert columns to numeric where possible
+    numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
 
-    # Basic dataset info
-    insights.append(f"Dataset contains {len(df)} records.")
-    insights.append(f"Dataset contains {len(df.columns)} columns.")
+    # Detect numeric columns
+    numeric_columns = [
+        col for col in df.columns
+        if pd.api.types.is_numeric_dtype(df[col])
+    ]
+
+    # Generate metrics
+
+    for column in numeric_columns:
+        series = df[column].dropna()
+
+        if series.empty:
+            continue
+
+    mean_val = series.mean()
+    median_val = series.median()
+    std_val = series.std()
+    min_val = series.min()
+    max_val = series.max()
+
+    insights["metrics"].append({
+        "column": column,
+        "mean": round(float(mean_val), 2),
+        "median": round(float(median_val), 2),
+        "std": round(float(std_val), 2),
+        "min": round(float(min_val), 2),
+        "max": round(float(max_val), 2)
+    })
+
+    # basic insight layer
+    if std_val / (mean_val + 1e-9) > 1:
+        insights["summary"].append(f"{column} shows high variability")
+    elif std_val / (mean_val + 1e-9) < 0.2:
+        insights["summary"].append(f"{column} is relatively stable")
+
+    # Chart generation
 
     chart_path = None
 
-    # Salary analysis
-    if "Salary" in df.columns:
-        plt.figure()
-        df["Salary"].dropna().hist()
-        plt.title("Salary Distribution")
+    if numeric_columns:
+        chart_path = generate_chart(df, numeric_columns[0], file_path)
 
-        filename = file_path.replace(".csv", "_salary.png")
-        chart_path = os.path.join("uploads", os.path.basename(filename))
-
-        plt.savefig(chart_path)
-        plt.close()
-
-        avg_salary = df["Salary"].mean()
-        insights.append(f"Average salary is {avg_salary:.2f}.")
-
-    # Performance analysis
-    if "PerformanceScore" in df.columns:
-        avg_perf = df["PerformanceScore"].mean()
-
-        if avg_perf >= 8:
-            insights.append("Overall performance is strong.")
-        elif avg_perf >= 6:
-            insights.append("Performance is moderate.")
-        else:
-            insights.append("Performance is weak.")
-
-    result = {
+    return {
+        "status": "success",
         "rows": len(df),
         "columns": len(df.columns),
         "insights": insights,
         "chart_path": chart_path
     }
-
-    return result

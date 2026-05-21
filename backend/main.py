@@ -11,7 +11,7 @@ from analyzer import analyze_data
 app = FastAPI()
 
 app.mount("/charts", StaticFiles(directory="uploads"), name="charts")
-
+print("STATIC MOUNT ACTIVE")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -30,30 +30,37 @@ def home():
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-   
+    print("UPLOAD HIT")
     file_path = os.path.join(UPLOAD_FOLDER, file.filename)
 
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    result = analyze_data(file_path)
+    try:
+        result = analyze_data(file_path)
 
-    insights = result["insights"]
-    chart_file = result["chart_path"]
+        chart_url = None
 
-    chart_url = None
-    if chart_file:
-        chart_url = f"/charts/{os.path.basename(chart_file)}"
+        if result["chart_path"]:
+            chart_url = "/charts/" + os.path.basename(result["chart_path"])
 
-    summary = {
-        "rows": result["rows"],
-        "columns": result["columns"]
-    }
+        return {
+            "status": "success",
+            "data": {
+                "file_name": file.filename,
+                "summary": {
+                    "rows": result["rows"],
+                    "columns": result["columns"]
+                },
+                "insights": result["insights"],
+                "chart_url": chart_url
+            }
+        }
 
-    return {
-        "status": "success",
-        "file_name": file.filename,
-        "summary": summary,
-        "insights": insights,
-        "chart_url": chart_url
-    }
+    except Exception as e:
+        print("BACKEND ERROR:", repr(e))
+
+        return {
+            "status": "error",
+            "message": str(e)
+        }
