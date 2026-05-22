@@ -11,7 +11,7 @@ from analyzer import analyze_data
 app = FastAPI()
 
 app.mount("/charts", StaticFiles(directory="uploads"), name="charts")
-print("STATIC MOUNT ACTIVE")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -30,7 +30,7 @@ def home():
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-    print("UPLOAD HIT")
+   
     file_path = os.path.join(UPLOAD_FOLDER, file.filename)
 
     with open(file_path, "wb") as buffer:
@@ -46,7 +46,7 @@ async def upload_file(file: UploadFile = File(...)):
         chart_url = None
         if chart_path:
             chart_url = "/charts/" + os.path.basename(chart_path)
-
+        print("MAIN.PY KEYS:", result.keys())
         return {
             "status": "success",
             "data": {
@@ -60,14 +60,26 @@ async def upload_file(file: UploadFile = File(...)):
                 "insights": result.get("insights"),
                 "profile": result.get("profile"),
                 "correlations": result.get("correlations"),
-
-                "dataset_health": result.get("dataset_health"),
-                "ranked_insights": result.get("ranked_insights"),
-                "conflicts": result.get("conflicts"),
                 "anomaly_details": result.get("anomaly_details"),
 
+                "dataset_health": result.get("dataset_health"),
+                "analytical_stability": result.get("analytical_stability"),
+                "conflicts": result.get("conflicts"),
+
+                "ranked_insights": result.get("ranked_insights"),
+               
+                "contextual_synthesis": result.get("contextual_synthesis", {}),
+               
+                "cross_theme_reasoning": result.get('cross_theme_reasoning') ,
+               
                 "narrative_summary": result.get("narrative_summary"),
+
                 "final_insights": result.get("final_insights"),
+
+                "executive_synthesis" : result.get("executive_synthesis"),
+
+                "recommendations" : result.get("recommendations"),
+
 
                 "chart_url": (
                     "/charts/" + os.path.basename(result["chart_path"])
