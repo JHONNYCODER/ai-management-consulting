@@ -53,27 +53,33 @@ async def upload_file(file: UploadFile = File(...)):
                 "file_name": file.filename,
 
                 "summary": {
-                    "rows": result["rows"],
-                    "columns": result["columns"]
+                    "rows": result.get("rows"),
+                    "columns": result.get("columns")
                 },
 
-                "insights": result["insights"],
-                "profile": result["profile"],
-                "correlations": result["correlations"],
+                "insights": result.get("insights"),
+                "profile": result.get("profile"),
+                "correlations": result.get("correlations"),
 
-                "dataset_health": result["dataset_health"],
-                "ranked_insights": result["ranked_insights"],
-                "conflicts": result["conflicts"],
-                "anomaly_details": result["anomaly_details"],
-                "narrative_summary": result["narrative_summary"],
-                "final_insights": result["final_insights"],
+                "dataset_health": result.get("dataset_health"),
+                "ranked_insights": result.get("ranked_insights"),
+                "conflicts": result.get("conflicts"),
+                "anomaly_details": result.get("anomaly_details"),
 
-                "chart_url": "/charts/" + os.path.basename(result["chart_path"]) if result["chart_path"] else None
+                "narrative_summary": result.get("narrative_summary"),
+                "final_insights": result.get("final_insights"),
+
+                "chart_url": (
+                    "/charts/" + os.path.basename(result["chart_path"])
+                    if result.get("chart_path")
+                    else None
+                )
             }
         }
 
     except Exception as e:
-        print("BACKEND ERROR:", repr(e))
+        import traceback
+        traceback.print_exc()
 
         return {
             "status": "error",

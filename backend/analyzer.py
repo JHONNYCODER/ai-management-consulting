@@ -92,7 +92,6 @@ def detect_column_type(series):
             return "numeric"
         return "categorical"    
 
-
 def profile_numeric_column(series):
         return {
             "type": "numeric",
@@ -102,7 +101,6 @@ def profile_numeric_column(series):
             "min": float(series.min()),
             "max": float(series.max())
         }    
-
 
 def profile_categorical_column(series):
         mode = series.mode()
@@ -114,255 +112,65 @@ def profile_categorical_column(series):
             "top_value": top_value
         }    
 
-
-def generate_profile(df):
-        profile = {}
-
-        for col in df.columns:
-            # skip ID-like columns
-            if "id" in col.lower():
-                continue
-
-            series = df[col].dropna()
-            col_type = detect_column_type(series)
-
-            if col_type == "numeric":
-                profile[col] = profile_numeric_column(series)
-            else:
-                profile[col] = profile_categorical_column(series)
-
-        return profile
-    
-def generate_correlation_analysis(df):
-    numeric_df = df.select_dtypes(include=[np.number])
-
-    if numeric_df.shape[1] < 2:
-        return {
-            "message": "Not enough numeric columns for correlation"
-        }
-
-    pearson_corr = numeric_df.corr(method="pearson")
-    spearman_corr = numeric_df.corr(method="spearman")
-
-    results = []
-    columns = numeric_df.columns
-
-    for col1, col2 in itertools.combinations(columns, 2):
-        pearson_val = pearson_corr.loc[col1, col2]
-        spearman_val = spearman_corr.loc[col1, col2]
-
-        abs_val = abs(pearson_val)
-
-       
-        # stronger filtering of weak correlations
-        if abs_val < 0.4:
-            continue
-
-        if "id" in col1.lower() or "id" in col2.lower():
-            continue
-
-        results.append({
-            "pair": f"{col1} vs {col2}",
-            "pearson": round(float(pearson_val), 3),
-            "spearman": round(float(spearman_val), 3),
-            "strength": round(abs_val, 3)
-        })
-
-    results.sort(key=lambda x: x["strength"], reverse=True)
-
-    return {
-        "total_pairs": len(results),
-        "top_correlations": results[:10]
-    }
-
-def generate_dataset_health(df):
-    report = {}
-
-    # 1. Missing value ratio
-    missing_ratio = df.isnull().sum().sum() / (df.shape[0] * df.shape[1])
-
-    completeness_score = max(0, 1 - missing_ratio)
-
-    # 2. Numeric anomaly detection (z-score)
-    numeric_df = df.select_dtypes(include=[np.number])
-
-    anomaly_count = 0
-
-    for col in numeric_df.columns:
-        series = numeric_df[col].dropna()
-
-        if len(series) < 3:
-            continue
-
-        mean = series.mean()
-        std = series.std()
-
-        if std == 0:
-            continue
-
-        z_scores = (series - mean) / std
-        anomaly_count += (abs(z_scores) > 3).sum()
-
-    # 3. Categorical dominance check
-    categorical_df = df.select_dtypes(exclude=[np.number])
-
-    dominance_issues = 0
-
-    for col in categorical_df.columns:
-        top_freq = df[col].value_counts(normalize=True).iloc[0]
-        if top_freq > 0.8:
-            dominance_issues += 1
-
-    # 4. Score calculation (simple weighted model)
-    health_score = (
-        completeness_score * 0.4 +
-        max(0, 1 - anomaly_count / (len(df) + 1)) * 0.4 +
-        max(0, 1 - dominance_issues / (len(categorical_df.columns) + 1)) * 0.2
-    ) * 100
-
-    return {
-        "completeness_score": round(completeness_score, 3),
-        "anomaly_count": int(anomaly_count),
-        "dominance_issues": int(dominance_issues),
-        "health_score": round(health_score, 2)
-    }
-
 def generate_narrative_summary(df, correlations, health):
-    parts = []
+    
+    numeric_cols = df.select_dtypes(include=["number"]).columns
+    categorical_cols = df.select_dtypes(exclude=["number"]).columns
 
-    # 1. Dataset health interpretation
-    score = health.get("health_score", 0)
+    summary_parts = []
 
-    if score >= 80:
-        parts.append("The dataset is high quality with minimal structural issues.")
-    elif score >= 60:
-        parts.append("The dataset is moderately clean with some quality concerns.")
-    else:
-        parts.append("The dataset has noticeable quality issues that may affect reliability.")
-
-    # 2. Correlation insight
-    if correlations and "top_correlations" in correlations and correlations["top_correlations"]:
-        top = correlations["top_correlations"][0]
-        pair = top["pair"]
-        strength = top["strength"]
-
-        if strength >= 0.8:
-            parts.append(f"There is a strong relationship between {pair}, indicating a clear dependency pattern.")
-        elif strength >= 0.5:
-            parts.append(f"There is a moderate relationship between {pair}, suggesting partial dependency.")
-        else:
-            parts.append(f"Relationships between variables are weak and not strongly predictive.")
-
-    # 3. Dataset structure insight
-    numeric_cols = df.select_dtypes(include=[np.number]).columns
-    categorical_cols = df.select_dtypes(exclude=[np.number]).columns
-
-    parts.append(
-        f"The dataset contains {len(numeric_cols)} numeric and {len(categorical_cols)} categorical features."
-    )
-
-    return " ".join(parts)
-
-def generate_ranked_insights(df, correlations, health, insights):
-    ranked = []
-
-    # 1. Correlation-based insights
-    if correlations and "top_correlations" in correlations:
-        for item in correlations["top_correlations"]:
-            strength = item["strength"]
-            
-            if strength >= 0.8:
-                priority = "high"
-            elif strength >= 0.5:
-                priority = "medium"
-            else:
-                priority = "low"
-
-            if strength >= 0.8:
-                confidence = "very_high"
-            elif strength >= 0.6:
-                confidence = "high"
-            elif strength >= 0.4:
-                confidence = "medium"
-            else:
-                confidence = "low"
-
-            ranked.append({
-                "type": "correlation",
-                "priority": priority,
-                "message": f"{item['pair']} shows statistical relationship",
-                "score": round(strength, 3),
-                "confidence": confidence
-            })
-
-    # 2. Dataset health insights
+    # Dataset quality
     health_score = health.get("health_score", 0)
 
     if health_score >= 80:
-        priority = "low"
-    elif health_score >= 60:
-        priority = "medium"
+        summary_parts.append(
+            "The dataset is high quality with minimal structural issues."
+        )
+
+    elif health_score >= 50:
+        summary_parts.append(
+            "The dataset is moderately reliable but contains some quality concerns."
+        )
+
     else:
-        priority = "high"
+        summary_parts.append(
+            "The dataset contains significant quality or consistency issues."
+        )
 
-    ranked.append({
-        "type": "health",
-        "priority": priority,
-        "message": "Overall dataset quality evaluated",
-        "score": round(health_score / 100, 3)
-    })
+    # Correlation interpretation
+    strongest = None
 
-    # 3. Variability insights from metrics
-    for metric in insights.get("metrics", []):
-        if metric["std"] > metric["mean"]:
-            ranked.append({
-                "type": "variability",
-                "priority": "medium",
-                "message": f"{metric['column']} shows high variability",
-                "score": 0.6
-            })
+    if correlations.get("pairs"):
+        strongest = max(
+            correlations["pairs"],
+            key=lambda x: abs(x.get("pearson", 0))
+        )
 
-    # Sort by score
-    ranked.sort(key=lambda x: x["score"], reverse=True)
+    if strongest:
+        strength = abs(strongest.get("pearson", 0))
 
-    return ranked[:10]
+        if strength >= 0.7:
+            summary_parts.append(
+                f"There is a strong relationship between {strongest['pair']}."
+            )
 
-def generate_anomaly_explanations(df):
-    numeric_df = df.select_dtypes(include=[np.number])
+        elif strength >= 0.4:
+            summary_parts.append(
+                f"There is a moderate relationship between {strongest['pair']}."
+            )
 
-    anomalies = []
+        else:
+            summary_parts.append(
+                "Relationships between variables are relatively weak."
+            )
 
-    for col in numeric_df.columns:
-        series = numeric_df[col].dropna()
+    # Dataset structure
+    summary_parts.append(
+        f"The dataset contains {len(numeric_cols)} numeric and "
+        f"{len(categorical_cols)} categorical features."
+    )
 
-        if len(series) < 3:
-            continue
-
-        mean = series.mean()
-        std = series.std()
-
-        if std == 0:
-            continue
-
-        z_scores = (series - mean) / std
-
-        for idx, z in z_scores.items():
-            if abs(z) > 3:
-                severity = "high" if abs(z) > 4 else "medium"
-
-                anomalies.append({
-                    "column": col,
-                    "row_index": int(idx),
-                    "value": float(series.loc[idx]),
-                    "z_score": round(float(z), 3),
-                    "severity": severity,
-                    "reason": "statistical_outlier_z_score"
-                })
-
-    # sort most extreme first
-    anomalies.sort(key=lambda x: abs(x["z_score"]), reverse=True)
-
-    return anomalies[:20]
+    return " ".join(summary_parts)
 
 def generate_conflict_detection(correlations, health, df):
     conflicts = []
@@ -404,32 +212,6 @@ def generate_conflict_detection(correlations, health, df):
         })
 
     return conflicts
-
-def generate_final_insights(rankings, conflicts, narrative):
-    key_findings = []
-    warnings = []
-    supporting = []
-
-    # 1. Pull high priority ranked insights
-    for item in rankings:
-        if item["priority"] == "high":
-            key_findings.append(item["message"])
-        elif item["priority"] == "medium":
-            supporting.append(item["message"])
-
-    # 2. Add conflicts as warnings
-    for c in conflicts:
-        warnings.append(c["message"])
-
-    # 3. Compress narrative (keep it as base summary)
-    summary = narrative
-
-    return {
-        "key_findings": key_findings[:5],
-        "supporting_evidence": supporting[:5],
-        "warnings": warnings[:5],
-        "summary": summary
-    }
 
 def calibrate_confidence(ranked_insights, health, conflicts, df):
     calibrated = []
@@ -658,85 +440,7 @@ def align_contradictions(narrative_summary, ranked_insights, final_insights):
 
     return adjusted_narrative, final_insights
 
-def analyze_data(file_path):
-    """
-    Clean pipeline:
-    - Load CSV
-    - Detect numeric columns
-    - Generate summary + metrics
-    - Create chart
-    - Return JSON-safe response
-    """
-
-    df = pd.read_csv(file_path)
-
-    if df.empty:
-        return {
-            "status": "error",
-            "message": "CSV file is empty.",
-            "rows": 0,
-            "columns": 0,
-            "insights": {
-                "summary": [],
-                "metrics": []
-            },
-            "chart_path": None
-        }
-    insights = {
-        "summary": [],
-        "metrics": []
-    }
-    # Convert columns to numeric where possible
-    numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
-
-    # Detect numeric columns
-    numeric_columns = [
-        col for col in df.columns
-        if pd.api.types.is_numeric_dtype(df[col])
-    ]
-
-    # Generate metrics  
-    for column in numeric_columns:
-        series = df[column].dropna()
-
-        if series.empty:
-            continue
-
-        mean_val = series.mean()
-        median_val = series.median()
-        std_val = series.std()
-        min_val = series.min()
-        max_val = series.max()
-
-        insights["metrics"].append({
-            "column": column,
-            "mean": round(float(mean_val), 2),
-            "median": round(float(median_val), 2),
-            "std": round(float(std_val), 2),
-            "min": round(float(min_val), 2),
-            "max": round(float(max_val), 2)
-        })
-
-        # basic insight layer
-        if std_val / (mean_val + 1e-9) > 1:
-            insights["summary"].append(f"{column} shows high variability")
-        elif std_val / (mean_val + 1e-9) < 0.2:
-            insights["summary"].append(f"{column} is relatively stable")
-    
-    # Chart generation
-
-    chart_path = None
-
-    if numeric_columns is not None and len(numeric_columns) > 0:
-        try:
-            chart_path = generate_chart(df, numeric_columns[0], file_path)
-        except Exception as e:
-            print("Chart generation failed:", e)
-            chart_path = None   
-
-    # =========================
-    # Core Analysis Hooks
-    # =========================
+def run_analysis_pipeline(df, file_path, insights):
 
     health = generate_dataset_health(df)
 
@@ -749,11 +453,6 @@ def analyze_data(file_path):
     )
 
     anomaly_details = generate_anomaly_explanations(df)
-
-
-    # =========================
-    # Insight Generation Layer
-    # =========================
 
     raw_ranked_insights = generate_ranked_insights(
         df,
@@ -771,7 +470,10 @@ def analyze_data(file_path):
 
     ranked_insights = deduplicate_insights(ranked_insights)
 
-    ranked_insights = resolve_conflicts(conflicts, ranked_insights)
+    ranked_insights = resolve_conflicts(
+        conflicts,
+        ranked_insights
+    )
 
     ranked_insights = rebalance_scores(
         ranked_insights,
@@ -787,28 +489,21 @@ def analyze_data(file_path):
         df
     )
 
-
-    # =========================
-    # Narrative + Final Layer
-    # =========================
-
+    # Narrative layer
     narrative_summary = generate_narrative_summary(
         df,
         correlations,
         health
     )
 
+    # Final insights layer
     final_insights = generate_final_insights(
         ranked_insights,
         conflicts,
         narrative_summary
     )
 
-
-    # =========================
-    # ALIGNMENT LAYER (STEP 18 FIX)
-    # =========================
-
+    # Alignment layer
     narrative_summary, final_insights = align_contradictions(
         narrative_summary,
         ranked_insights,
@@ -818,18 +513,275 @@ def analyze_data(file_path):
     return {
         "rows": len(df),
         "columns": len(df.columns),
+
         "insights": insights,
         "profile": generate_profile(df),
+
         "correlations": correlations,
-        "chart_path": chart_path,
-        "dataset_health": generate_dataset_health(df),
+        "dataset_health": health,
+
         "ranked_insights": ranked_insights,
         "conflicts": conflicts,
         "anomaly_details": anomaly_details,
-        "narrative_summary": generate_narrative_summary(
-            df,
-            correlations,
-            health
-        ),
-        "final_insights": final_insights,
+
+        "narrative_summary": narrative_summary,
+        "final_insights": final_insights
+    }
+
+def generate_profile(df):
+    profile = {}
+
+    for col in df.columns:
+        series = df[col]
+
+        if pd.api.types.is_numeric_dtype(series):
+            clean = series.dropna()
+
+            if clean.empty:
+                continue
+
+            profile[col] = {
+                "type": "numeric",
+                "mean": round(float(clean.mean()), 2),
+                "median": round(float(clean.median()), 2),
+                "std": round(float(clean.std()), 2),
+                "min": float(clean.min()),
+                "max": float(clean.max())
+            }
+
+        else:
+            clean = series.dropna()
+
+            if clean.empty:
+                continue
+
+            top_value = clean.value_counts().idxmax()
+
+            profile[col] = {
+                "type": "categorical",
+                "unique_values": int(clean.nunique()),
+                "top_value": str(top_value)
+            }
+
+    return profile
+
+def generate_correlation_analysis(df):
+    numeric_df = df.select_dtypes(include=[np.number])
+
+    if numeric_df.shape[1] < 2:
+        return {}
+
+    pearson_corr = numeric_df.corr(method="pearson")
+
+    results = []
+    columns = numeric_df.columns
+
+    for col1, col2 in itertools.combinations(columns, 2):
+        val = pearson_corr.loc[col1, col2]
+
+        if pd.isna(val):
+            continue
+
+        results.append({
+            "pair": f"{col1} vs {col2}",
+            "pearson": round(float(val), 3)
+        })
+
+    return {
+        "pairs": results
+    }
+
+def generate_dataset_health(df):
+    import numpy as np
+
+    total_cells = df.shape[0] * df.shape[1]
+    missing_cells = df.isna().sum().sum()
+
+    completeness = 1 - (missing_cells / total_cells if total_cells > 0 else 0)
+
+    numeric_df = df.select_dtypes(include=[np.number])
+
+    anomaly_count = 0
+    for col in numeric_df.columns:
+        series = numeric_df[col].dropna()
+        if series.empty:
+            continue
+
+        std = series.std()
+        mean = series.mean()
+
+        if mean != 0 and abs(std / mean) > 2:
+            anomaly_count += 1
+
+    health_score = round(completeness * 100 - anomaly_count * 5, 2)
+
+    return {
+        "completeness_score": round(completeness, 3),
+        "anomaly_count": anomaly_count,
+        "dominance_issues": 0,
+        "health_score": health_score
+    }
+
+def generate_anomaly_explanations(df):
+    import numpy as np
+
+    anomalies = []
+    numeric_df = df.select_dtypes(include=[np.number])
+
+    for col in numeric_df.columns:
+        series = numeric_df[col].dropna()
+
+        if len(series) < 3:
+            continue
+
+        mean = series.mean()
+        std = series.std()
+
+        for idx, val in series.items():
+            if std > 0 and abs(val - mean) > 3 * std:
+                anomalies.append({
+                    "column": col,
+                    "row_index": int(idx),
+                    "value": float(val),
+                    "type": "outlier",
+                    "severity": "high"
+                })
+
+    return anomalies
+
+def generate_ranked_insights(df, correlations, health, insights):
+    ranked = []
+
+    # Health signal
+    health_score = health.get("health_score", 0)
+
+    ranked.append({
+        "type": "health",
+        "priority": "low" if health_score > 70 else "medium",
+        "message": "Dataset quality evaluated",
+        "score": round(health_score / 100, 3)
+    })
+
+    # Correlation signals
+    if correlations and "pairs" in correlations:
+        for item in correlations["pairs"]:
+            strength = abs(item.get("pearson", 0))
+
+            if strength > 0.7:
+                priority = "high"
+            elif strength > 0.4:
+                priority = "medium"
+            else:
+                priority = "low"
+
+            ranked.append({
+                "type": "correlation",
+                "priority": priority,
+                "message": f"{item['pair']} shows statistical relationship",
+                "score": round(strength, 3)
+            })
+
+    # Variability signals
+    for metric in insights.get("metrics", []):
+        if metric["std"] > metric["mean"]:
+            ranked.append({
+                "type": "variability",
+                "priority": "medium",
+                "message": f"{metric['column']} shows high variability",
+                "score": 0.5
+            })
+
+    ranked.sort(key=lambda x: x["score"], reverse=True)
+
+    return ranked[:10]
+
+def generate_final_insights(ranked_insights, conflicts, narrative_summary):
+    key_findings = []
+    supporting_evidence = []
+    warnings = []
+
+    for item in ranked_insights:
+        if item["type"] == "correlation" and item["priority"] in ["high", "medium"]:
+            key_findings.append(item["message"])
+
+        if item["type"] == "variability":
+            supporting_evidence.append(item["message"])
+
+    for c in conflicts:
+        warnings.append(c.get("message", ""))
+
+    return {
+        "key_findings": key_findings[:5],
+        "supporting_evidence": supporting_evidence[:5],
+        "warnings": warnings[:5],
+        "summary": narrative_summary if narrative_summary else "No narrative generated"
+    }
+
+def analyze_data(file_path):
+    import pandas as pd
+    import os
+
+    df = pd.read_csv(file_path)
+
+    insights = {
+        "summary": [],
+        "metrics": []
+    }
+
+    numeric_columns = df.select_dtypes(include=["number"]).columns.tolist()
+    
+    for col in numeric_columns:
+        series = df[col].dropna()
+
+        if series.empty:
+            continue
+
+        mean_val = series.mean()
+        std_val = series.std()
+
+        insights["metrics"].append({
+            "column": col,
+            "mean": round(float(mean_val), 2),
+            "std": round(float(std_val), 2),
+            "min": float(series.min()),
+            "max": float(series.max())
+        })
+
+        if std_val > mean_val:
+            insights["summary"].append(f"{col} shows high variability")
+        else:
+            insights["summary"].append(f"{col} is relatively stable")
+
+    chart_path = None
+    if numeric_columns:
+        try:
+            chart_path = generate_chart(df, numeric_columns[0], file_path)
+        except Exception as e:
+            print("Chart error:", e)
+    
+    # pipeline execution
+    result = run_analysis_pipeline(
+        df,
+        file_path,
+        insights
+    )
+
+    return {
+        "rows": result["rows"],
+        "columns": result["columns"],
+
+        "insights": result["insights"],
+        "profile": result["profile"],
+
+        "correlations": result["correlations"],
+        "dataset_health": result["dataset_health"],
+
+        "ranked_insights": result["ranked_insights"],
+        "conflicts": result["conflicts"],
+        "anomaly_details": result["anomaly_details"],
+
+        "narrative_summary": result["narrative_summary"],
+        "final_insights": result["final_insights"],
+
+        "chart_path": chart_path
     }
