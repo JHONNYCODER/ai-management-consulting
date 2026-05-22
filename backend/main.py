@@ -51,14 +51,24 @@ async def upload_file(file: UploadFile = File(...)):
             "status": "success",
             "data": {
                 "file_name": file.filename,
+
                 "summary": {
                     "rows": result["rows"],
                     "columns": result["columns"]
                 },
+
                 "insights": result["insights"],
                 "profile": result["profile"],
                 "correlations": result["correlations"],
-                "chart_url": chart_url
+
+                "dataset_health": result["dataset_health"],
+                "ranked_insights": result["ranked_insights"],
+                "conflicts": result["conflicts"],
+                "anomaly_details": result["anomaly_details"],
+                "narrative_summary": result["narrative_summary"],
+                "final_insights": result["final_insights"],
+
+                "chart_url": "/charts/" + os.path.basename(result["chart_path"]) if result["chart_path"] else None
             }
         }
 
