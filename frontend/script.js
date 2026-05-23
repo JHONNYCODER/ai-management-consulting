@@ -36,22 +36,36 @@ window.uploadFile = async function () {
 
         let output = `<h3>Analysis Results</h3>`;
 
-        result.insights.summary.forEach(insight => {
-            output += `<p>${insight}</p>`;
-        });
+        if (Array.isArray(result.insights)) {
 
-        result.insights.metrics.forEach(metric => {
-            output += `
-                <div>
-                    <h4>${metric.column}</h4>
-                    <p>Mean: ${metric.mean}</p>
-                    <p>Median: ${metric.median}</p>
-                    <p>Std: ${metric.std}</p>
-                    <p>Min: ${metric.min}</p>
-                    <p>Max: ${metric.max}</p>
-                </div>
-            `;
-        });
+            output += `<h4>Insights</h4>`;
+
+            result.insights.forEach(insight => {
+                output += `<p>${insight}</p>`;
+            });
+        }
+
+        if (result.profile) {
+
+            output += `<h4>Profile Metrics</h4>`;
+
+            Object.entries(result.profile).forEach(([column, metric]) => {
+
+                if (metric.type === "numeric") {
+
+                    output += `
+                        <div>
+                            <h4>${column}</h4>
+                            <p>Mean: ${metric.mean}</p>
+                            <p>Median: ${metric.median}</p>
+                            <p>Std: ${metric.std}</p>
+                            <p>Min: ${metric.min}</p>
+                            <p>Max: ${metric.max}</p>
+                        </div>
+                    `;
+                }
+            });
+        }
 
         if (result.chart_url) {
 

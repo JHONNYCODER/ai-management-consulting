@@ -67,22 +67,18 @@ def generate_semantic_insights(correlations, df=None):
 
     return insights
 
-def add_semantic_insights_to_state(state):
-    correlations = (state.get("correlations") or {}).get("pairs", [])
-    # The original function expects a dict with "top_correlations" (older) or can be adapted:
-    # We'll create a miniature structure for compatibility:
-    input_corr = {"top_correlations": []}
-    for p in correlations:
-        input_corr["top_correlations"].append({
-            "pair": p.get("pair"),
-            "pearson": p.get("pearson")
-        })
+def generate_chart(df, column, file_path):
+    file_name = os.path.basename(file_path).replace(".csv", "_chart.png")
+    chart_fs_path = os.path.join("uploads", file_name)
+    os.makedirs("uploads", exist_ok=True)
 
-    semantic = generate_semantic_insights(input_corr, state.get("df"))
-    state["semantic_insights"] = semantic
-    # Also write a user-facing 'insights' key that main.py expects
-    state["insights"] = semantic
-    return state
+    plt.figure()
+    df[column].dropna().hist()
+    plt.title(f"{column} Distribution")
+    plt.savefig(chart_fs_path)
+    plt.close()
+
+    return f"/charts/{file_name}"
 
 def detect_column_type(series):
         if pd.api.types.is_numeric_dtype(series):
@@ -271,54 +267,187 @@ def generate_conflict_detection(correlations, health, df):
 
     return conflicts
 
-def generate_analytical_stability(state):
-    """
-    Populate state['analytical_stability'] with:
-      - score (0..100)
-      - confidence (0..1, mean of calibrated confidences)
-      - label ('high'|'medium'|'low')
-      - summary (short string)
-    """
-    if not state or not isinstance(state, dict):
-        return state
+def calibrate_confidence(
+    ranked_insights,
+    health,
+    conflicts,
+    anomaly_details,
+    df
+):
+    calibrated = []
 
-    health_score = (state.get("dataset_health") or {}).get("health_score", 50) or 50
-    sample_size = state.get("rows", 0)
-    size_factor = min(1.0, (sample_size or 0) / 1000.0)
+    health_score = health.get("health_score", 0)
+    sample_size = len(df)
+    conflict_count = len(conflicts) if conflicts else 0
+    anomaly_count = len(anomaly_details) if anomaly_details else 0
 
-    ranked = state.get("ranked_insights") or []
-    confidences = [float(i.get("confidence", 0.5)) for i in ranked] if ranked else []
-    avg_conf = sum(confidences) / len(confidences) if confidences else 0.5
+    for item in ranked_insights:
 
-    conflict_count = len(state.get("conflicts") or [])
-    anomaly_count = (state.get("dataset_health") or {}).get("anomaly_count", 0) or len(state.get("anomaly_details") or [])
+        confidence = item.get("confidence", 0.5)
 
-    # Baseline weighted aggregation
-    baseline = 0.6 * float(health_score) + 0.3 * (avg_conf * 100.0) + 0.1 * (size_factor * 100.0)
+        base_map = {
+            "very_high": 1.0,
+            "high": 0.75,
+            "medium": 0.5,
+            "low": 0.25
+        }
 
-    # Penalties
-    penalty_conflicts = min(30.0, conflict_count * 5.0)
-    penalty_anomalies = min(15.0, anomaly_count * 2.0)
+        if isinstance(confidence, str):
+            base = base_map.get(confidence, 0.5)
+        else:
+            base = float(confidence)
 
-    score = baseline - (penalty_conflicts + penalty_anomalies)
-    score = max(0.0, min(100.0, score))
+        strength = item.get("strength", "weak")
 
+        item["confidence"] = compute_final_confidence(
+            base=base,
+            strength=strength,
+            health_score=health_score,
+            sample_size=sample_size,
+            conflicts=conflict_count,
+            anomalies=anomaly_count
+        )
+
+        calibrated.append(item)
+
+def generate_analytical_stability(
+    health,
+    ranked_insights,
+    conflicts,
+    anomaly_details,
+    df
+):
+
+    # ----------------------------
+    # Base score (normalized safer)
+    # ----------------------------
+
+    base_score = health.get("health_score", 50)
+
+    sample_size = len(df)
+    
+    # ensure bounded baseline
+    score = max(0, min(100, float(base_score)))
+
+    size_factor = min(1.0, sample_size / 1000)
+
+    conflict_count = len(conflicts) if conflicts else 0
+    anomaly_count = len(anomaly_details) if anomaly_details else 0
+
+    # ----------------------------
+    # Insight signal strength
+    # ----------------------------
+    significant_count = 0
+    ranked_insights = ranked_insights or []
+    total = len(ranked_insights)
+
+    def normalize_confidence(c):
+        if isinstance(c, str):
+            return {
+                "very_high": 0.9,
+                "high": 0.8,
+                "medium": 0.5,
+                "low": 0.2
+            }.get(c, 0.3)
+
+        if isinstance(c, (int, float)):
+            return max(0.0, min(float(c), 1.0))
+
+        return 0.3
+
+
+    for item in ranked_insights:
+        confidence = normalize_confidence(item.get("confidence", 0.5))
+
+        if confidence >= 0.5:
+            significant_count += 1
+
+    reliability_ratio = (significant_count / total) if total > 0 else 0
+
+    stability_score = (
+        0.5 * reliability_ratio +
+        0.3 * (size_factor) +
+        0.2 * (1 - min(1, (conflict_count + anomaly_count) / 10))
+    ) * 100
+
+    # ----------------------------
+    # Final clamp
+    # ----------------------------
+    score = max(0, min(100, round(score)))
+
+    # ----------------------------
+    # Labeling (clean thresholds)
+    # ----------------------------
     if score >= 75:
-        label = "high"
+        label = "stable"
     elif score >= 50:
-        label = "medium"
+        label = "moderately stable"
     else:
-        label = "low"
+        label = "unstable"
 
-    summary = f"Analytical stability is {label} (score={score:.1f}). Based on health={health_score}, avg_conf={avg_conf:.2f}, n={sample_size}."
+    # ----------------------------
+    # Summary (slightly more informative)
+    # ----------------------------
+    if label == "stable":
+        summary = "High consistency across signals with reliable structural patterns."
 
-    state["analytical_stability"] = {
-        "score": round(score, 1),
-        "confidence": round(avg_conf, 3),
+    elif label == "moderately stable":
+        summary = "Moderate reliability with some uncertainty in signal strength."
+
+    else:
+        summary = "Low stability due to weak or inconsistent analytical signals."
+
+    # ----------------------------
+    # Output (single source of truth)
+    # ----------------------------
+    stability_score = max(0, min(100, round(stability_score)))
+
+    if stability_score >= 75:
+        label = "stable"
+    elif stability_score >= 50:
+        label = "moderately stable"
+    else:
+        label = "unstable"
+    
+    return {
+        "score": stability_score,
+        "confidence": round(stability_score / 100, 3),
         "label": label,
         "summary": summary
     }
-    return state
+
+def deduplicate_insights(ranked_insights):
+    ranked_insights = ranked_insights or []
+    
+    seen = set()
+    cleaned = []
+
+    for item in ranked_insights:
+        key = item["message"].lower().strip()
+
+        # crude but effective dedupe
+        if key in seen:
+            continue
+
+        seen.add(key)
+        cleaned.append(item)
+
+    return cleaned
+
+def resolve_conflicts(conflicts, ranked_insights):
+    if not conflicts:
+        return ranked_insights
+
+    for item in ranked_insights:
+        for c in conflicts:
+            if c["type"] == "sample_size_warning" and item["type"] == "correlation":
+                item["confidence"] = "medium"
+                item["priority"] = "medium"
+            if c["type"] == "correlation_vs_health" and item["type"] == "correlation":
+                if item.get("score", 0) > 0.8:
+                    item["confidence"] = "medium"
+
+    return ranked_insights
 
 def rebalance_scores(ranked_insights, health, conflicts, df):
     adjusted = []
@@ -503,10 +632,11 @@ def align_contradictions(
 
     return adjusted_narrative, final_insights
 
-def safe_list(x):
-    return list(x) if x else []
-
 def classify_correlation_strength(value):
+    """
+    Converts correlation values into semantic strength categories.
+    This becomes the canonical strength source across the pipeline.
+    """
 
     abs_value = abs(value)
 
@@ -1032,141 +1162,22 @@ def generate_recommendations(
         "system_confidence": round(stability, 3)  # ← rounded, never 0
     }
 
-def map_priority_from_score(score):
-    if score >= 0.75:
-        return "high"
-    elif score >= 0.45:
-        return "medium"
-    else:
-        return "low"
-    
 def map_priority(confidence, stability, is_key_theme=False):
+    """
+    Converts analytical signals into business priority.
+    """
 
     score = confidence * 0.7 + stability * 0.3
 
     if is_key_theme:
         score += 0.1
+
     if score >= 0.7:
         return "high"
     elif score >= 0.4:
         return "medium"
     else:
         return "low"
-
-def create_initial_state(df=None, file_path=None, insights_input=None):
-    """
-    Build canonical pipeline state with safe defaults.
-    All major functions read and write this dict.
-    """
-    state = {
-        # core
-        "df": df,
-        "file_path": file_path,
-        "rows": len(df) if df is not None else 0,
-        "columns": len(df.columns) if df is not None else 0,
-
-        # inputs
-        "insights_input": insights_input or {"summary": [], "metrics": []},
-
-        # intermediate / outputs (deterministic keys)
-        "profile": {},
-        "chart_path": None,
-        "correlations": {"pairs": []},
-        "dataset_health": {"health_score": 0, "completeness_score": 0.0, "anomaly_count": 0},
-        "anomaly_details": [],
-        "conflicts": [],
-        "ranked_insights": [],
-        "semantic_insights": [],
-        "analytical_stability": {"score": 0, "confidence": 0.0, "label": "unknown", "summary": ""},
-
-        "narrative_summary": "",
-        "final_insights": {"key_findings": [], "supporting_evidence": [], "warnings": [], "summary": ""},
-
-        "contextual_synthesis": {},
-        "cross_theme_reasoning": {},
-        "executive_synthesis": {},
-        "recommendations": {}
-    }
-
-    return state
-
-def generate_chart(state, column):
-    state = state or {}
-    df = state.get("df")
-    file_path = state.get("file_path")
-    state["chart_path"] = None
-
-    if df is None or column not in df.columns:
-        return state
-
-    try:
-        file_name = os.path.basename(file_path or "data.csv").replace(".csv", f"_{column}_chart.png")
-        chart_fs_path = os.path.join("uploads", file_name)
-        os.makedirs("uploads", exist_ok=True)
-
-        plt.figure()
-        df[column].dropna().hist()
-        plt.title(f"{column} Distribution")
-        plt.savefig(chart_fs_path)
-        plt.close()
-
-        state["chart_path"] = f"/charts/{file_name}"
-    except Exception as e:
-        # fail-safe: keep state, log minimally
-        print("generate_chart error:", e)
-        state["chart_path"] = None
-
-    return state
-
-def generate_profile(state):
-    """
-    Fill state['profile'] with per-column profiles.
-    """
-    state = state or {}
-    df = state.get("df")
-    profile = {}
-
-    if df is None:
-        state["profile"] = profile
-        return state
-
-    for col in df.columns:
-        series = df[col]
-        clean = series.dropna()
-
-        if clean.empty:
-            # leave out empty columns (consistent with previous behavior)
-            continue
-
-        try:
-            if pd.api.types.is_numeric_dtype(series):
-                profile[col] = {
-                    "type": "numeric",
-                    "mean": round(float(clean.mean()), 2),
-                    "median": round(float(clean.median()), 2),
-                    "std": round(float(clean.std()), 2),
-                    "min": float(clean.min()),
-                    "max": float(clean.max())
-                }
-            else:
-                top_value = None
-                try:
-                    top_value = str(clean.value_counts().idxmax())
-                except Exception:
-                    top_value = None
-
-                profile[col] = {
-                    "type": "categorical",
-                    "unique_values": int(clean.nunique()),
-                    "top_value": top_value
-                }
-        except Exception as e:
-            # defensive: skip problematic columns
-            print(f"generate_profile skipped column {col} due to", e)
-            continue
-
-    state["profile"] = profile
-    return state
 
 def compute_final_confidence(
     base,
@@ -1176,23 +1187,17 @@ def compute_final_confidence(
     conflicts,
     anomalies
 ):
-    """
-    Small, stable wrapper that returns a confidence in 0.1..0.95 (kept as 0..1 scale for Phase 1).
-    This is a single place where final numeric confidence is computed for calibration steps.
-    """
-    try:
-        score = float(base)
-    except Exception:
-        score = 0.5
 
-    size_factor = min(1.0, sample_size / 30) if sample_size is not None else 0.0
+    score = base
+
+    size_factor = min(1.0, sample_size / 30)
     score *= (0.7 + 0.3 * size_factor)
 
-    score *= (0.7 + 0.3 * (health_score / 100 if health_score is not None else 0.0))
+    score *= (0.7 + 0.3 * (health_score / 100))
 
-    score *= (1 - min(0.3, 0.1 * (conflicts if conflicts is not None else 0)))
+    score *= (1 - min(0.3, 0.1 * conflicts))
 
-    score *= (1 - min(0.25, 0.08 * (anomalies if anomalies is not None else 0)))
+    score *= (1 - min(0.25, 0.08 * anomalies))
 
     if strength in ["strong", "very strong"]:
         score *= 1.1
@@ -1338,49 +1343,73 @@ def run_analysis_pipeline(df, file_path, insights):
         "recommendations": recommendations
     }
 
-def generate_correlation_analysis(state):
-    """
-    Writes state['correlations'] = {"pairs": [...]}
-    Each pair is a dict with keys: pair, pearson, strength, p_value, significance
-    """
-    state = state or {}
-    df = state.get("df")
+def generate_profile(df):
+    profile = {}
 
-    results = []
-    if df is None:
-        state["correlations"] = {"pairs": results}
-        return state
+    for col in df.columns:
+        series = df[col]
 
+        if pd.api.types.is_numeric_dtype(series):
+            clean = series.dropna()
+
+            if clean.empty:
+                continue
+
+            profile[col] = {
+                "type": "numeric",
+                "mean": round(float(clean.mean()), 2),
+                "median": round(float(clean.median()), 2),
+                "std": round(float(clean.std()), 2),
+                "min": float(clean.min()),
+                "max": float(clean.max())
+            }
+
+        else:
+            clean = series.dropna()
+
+            if clean.empty:
+                continue
+
+            top_value = clean.value_counts().idxmax()
+
+            profile[col] = {
+                "type": "categorical",
+                "unique_values": int(clean.nunique()),
+                "top_value": str(top_value)
+            }
+
+    return profile
+
+def generate_correlation_analysis(df):
     numeric_df = df.select_dtypes(include=[np.number])
 
     if numeric_df.shape[1] < 2:
-        state["correlations"] = {"pairs": results}
-        return state
+        return {}
 
     pearson_corr = numeric_df.corr(method="pearson")
+
+    results = []
     columns = numeric_df.columns
 
     for col1, col2 in itertools.combinations(columns, 2):
         val = pearson_corr.loc[col1, col2]
+
         if pd.isna(val):
             continue
 
         try:
-            # pearsonr requires finite arrays
-            col1_data = numeric_df[col1].dropna()
-            col2_data = numeric_df[col2].dropna()
-            # align indices
-            align_idx = col1_data.index.intersection(col2_data.index)
-            if len(align_idx) < 3:
-                p_value = 1.0
-            else:
-                _, p_value = pearsonr(col1_data.loc[align_idx], col2_data.loc[align_idx])
+            _, p_value = pearsonr(
+                numeric_df[col1],
+                numeric_df[col2]
+            )
+
         except Exception:
             p_value = 1.0
 
         strength = classify_correlation_strength(val)
 
         significance = "not significant"
+
         if p_value < 0.01:
             significance = "highly significant"
         elif p_value < 0.05:
@@ -1394,25 +1423,15 @@ def generate_correlation_analysis(state):
             "significance": significance
         })
 
-    state["correlations"] = {"pairs": results}
-    return state
+    return {
+        "pairs": results
+    }
 
-def generate_dataset_health(state):
-    """
-    Fills state['dataset_health'] with:
-      - completeness_score (0..1)
-      - anomaly_count (int)
-      - health_score (0..100)
-    """
-    state = state or {}
-    df = state.get("df")
-
-    if df is None:
-        state["dataset_health"] = {"completeness_score": 0.0, "anomaly_count": 0, "dominance_issues": 0, "health_score": 0.0}
-        return state
+def generate_dataset_health(df):
+    import numpy as np
 
     total_cells = df.shape[0] * df.shape[1]
-    missing_cells = int(df.isna().sum().sum())
+    missing_cells = df.isna().sum().sum()
 
     completeness = 1 - (missing_cells / total_cells if total_cells > 0 else 0)
 
@@ -1423,59 +1442,48 @@ def generate_dataset_health(state):
         series = numeric_df[col].dropna()
         if series.empty:
             continue
+
         std = series.std()
         mean = series.mean()
+
         if mean != 0 and abs(std / mean) > 2:
             anomaly_count += 1
 
-    health_score = round(max(0.0, min(100.0, completeness * 100 - anomaly_count * 5)), 2)
+    health_score = round(completeness * 100 - anomaly_count * 5, 2)
 
-    state["dataset_health"] = {
+    return {
         "completeness_score": round(completeness, 3),
         "anomaly_count": anomaly_count,
         "dominance_issues": 0,
         "health_score": health_score
     }
 
-    return state
+def generate_anomaly_explanations(df):
+    import numpy as np
 
-def generate_anomaly_explanations(state):
-    """
-    Populates state['anomaly_details'] with list of anomaly dicts.
-    """
-    state = state or {}
-    df = state.get("df")
     anomalies = []
-
-    if df is None:
-        state["anomaly_details"] = anomalies
-        return state
-
     numeric_df = df.select_dtypes(include=[np.number])
 
     for col in numeric_df.columns:
         series = numeric_df[col].dropna()
+
         if len(series) < 3:
             continue
+
         mean = series.mean()
         std = series.std()
-        if std <= 0:
-            continue
-        for idx, val in series.items():
-            try:
-                if abs(val - mean) > 3 * std:
-                    anomalies.append({
-                        "column": col,
-                        "row_index": int(idx),
-                        "value": float(val),
-                        "type": "outlier",
-                        "severity": "high"
-                    })
-            except Exception:
-                continue
 
-    state["anomaly_details"] = anomalies
-    return state
+        for idx, val in series.items():
+            if std > 0 and abs(val - mean) > 3 * std:
+                anomalies.append({
+                    "column": col,
+                    "row_index": int(idx),
+                    "value": float(val),
+                    "type": "outlier",
+                    "severity": "high"
+                })
+
+    return anomalies
 
 def compute_unified_score(confidence, stability, significance=None, anomaly_penalty=0):
     """
@@ -1505,346 +1513,88 @@ def compute_unified_score(confidence, stability, significance=None, anomaly_pena
     score = max(score, 0.15)
 
     return score
+
+def map_priority_from_score(score):
+    if score >= 0.75:
+        return "high"
+    elif score >= 0.45:
+        return "medium"
+    else:
+        return "low"
     
-def generate_ranked_insights(state):
-    """
-    Produces an initial ranked_insights list and stores in state['ranked_insights'].
-    Each item: {type, priority, message, score, strength, ...}
-    """
-    state = state or {}
-    correlations = state.get("correlations", {}) or {}
-    pairs = correlations.get("pairs", []) or []
+def generate_ranked_insights(df, correlations, health, insights):
     ranked = []
 
-    for item in pairs:
-        strength_value = abs(item.get("pearson", 0))
-        semantic_strength = item.get("strength", "weak")
-        significance = item.get("significance", "not significant")
+    # Correlation signals
+    if correlations and "pairs" in correlations:
 
-        if strength_value > 0.7:
-            priority = "high"
-        elif strength_value > 0.4:
-            priority = "medium"
-        else:
-            priority = "low"
+        for item in correlations["pairs"]:
 
-        pair_name = item.get("pair", "unknown pair")
-        pearson_value = item.get("pearson", 0)
+            strength_value = abs(item.get("pearson", 0))
+            semantic_strength = item.get("strength", "weak")
+            significance = item.get("significance", "not significant")
+            
+            if strength_value > 0.7:
+                priority = "high"
+            elif strength_value > 0.4:
+                priority = "medium"
+            else:
+                priority = "low"
 
-        direction = "positive" if pearson_value >= 0 else "negative"
+        
+            pair_name = item["pair"]
+            pearson_value = item.get("pearson", 0)
 
-        if semantic_strength in ["strong", "very strong"]:
-            explanation = (
-                f"{pair_name} demonstrates a {semantic_strength} {direction} statistical relationship"
-            )
-        elif semantic_strength == "moderate":
-            explanation = (
-                f"{pair_name} shows a moderate {direction} statistical relationship"
-            )
-        else:
-            explanation = (
-                f"{pair_name} exhibits weak statistical alignment with limited analytical significance"
-            )
+            direction = "positive"
 
-        if significance == "not significant":
-            explanation += ", though the statistical evidence is currently limited"
-        elif significance == "highly significant":
-            explanation += " with highly reliable statistical evidence"
+            if pearson_value < 0:
+                direction = "negative"
 
-        ranked.append({
-            "type": "correlation",
-            "priority": priority,
-            "message": explanation,
-            "score": round(strength_value, 3),
-            "strength": semantic_strength,
-            # preserve the base pearson & significance for later reasoning
-            "pearson": pearson_value,
-            "significance": significance
-        })
+            if semantic_strength in ["strong", "very strong"]:
 
-    ranked.sort(key=lambda x: x.get("score", 0), reverse=True)
-    state["ranked_insights"] = ranked[:10]
-    return state
+                explanation = (
+                    f"{pair_name} demonstrates a {semantic_strength} "
+                    f"{direction} statistical relationship"
+                )
 
-def calibrate_confidence(state):
-    """
-    Read state['ranked_insights'], apply compute_final_confidence, update items,
-    set item['priority'], and write back to state['ranked_insights'].
-    """
-    if not state or not isinstance(state, dict):
-        return state
+            elif semantic_strength == "moderate":
 
-    insights = state.get("ranked_insights", []) or []
-    health_score = (state.get("dataset_health") or {}).get("health_score", 0)
-    sample_size = state.get("rows", 0)
-    conflict_count = len(state.get("conflicts") or [])
-    anomaly_count = (state.get("dataset_health") or {}).get("anomaly_count") or len(state.get("anomaly_details") or [])
+                explanation = (
+                    f"{pair_name} shows a moderate "
+                    f"{direction} statistical relationship"
+                )
 
-    base_map = {"very_high": 1.0, "high": 0.75, "medium": 0.5, "low": 0.25}
+            else:
 
-    calibrated = []
-    for item in insights:
-        conf = item.get("confidence", 0.5)
-        if isinstance(conf, str):
-            base = base_map.get(conf, 0.5)
-        else:
-            try:
-                base = float(conf)
-            except Exception:
-                base = 0.5
+                explanation = (
+                    f"{pair_name} exhibits weak statistical alignment "
+                    f"with limited analytical significance"
+                )
 
-        strength = item.get("strength", "weak")
+            if significance == "not significant":
 
-        final_conf = compute_final_confidence(
-            base=base,
-            strength=strength,
-            health_score=health_score,
-            sample_size=sample_size,
-            conflicts=conflict_count,
-            anomalies=anomaly_count
-        )
+                explanation += (
+                    ", though the statistical evidence is currently limited"
+                )
 
-        item["confidence"] = round(final_conf, 3)
-        item["priority"] = map_priority_from_score(final_conf)
-        calibrated.append(item)
+            elif significance == "highly significant":
 
-    state["ranked_insights"] = calibrated
-    return state
+                explanation += (
+                    " with highly reliable statistical evidence"
+                )
 
-def deduplicate_insights(state):
-    """
-    Deduplicates on message text. Keeps first occurrence.
-    """
-    state = state or {}
-    ranked_insights = state.get("ranked_insights") or []
-    seen = set()
-    cleaned = []
-    for item in ranked_insights:
-        key = (item.get("message") or "").lower().strip()
-        if key in seen:
-            continue
-        seen.add(key)
-        cleaned.append(item)
-    state["ranked_insights"] = cleaned
-    return state
-
-def resolve_conflicts(state):
-    """
-    Analyze the canonical pipeline `state` and populate state['conflicts'] with detected issues.
-    Returns the updated state dict.
-    Each conflict is a dict with keys: type, severity ('low'|'medium'|'high'), message, and optional details.
-    """
-    # Defensive defaults
-    if state is None or not isinstance(state, dict):
-        return {"conflicts": []}
-
-    conflicts = []
-    df = state.get("df")
-    # rows fallback to an explicit state entry or len(df)
-    rows = state.get("rows")
-    if rows is None:
-        try:
-            rows = len(df) if df is not None else 0
-        except Exception:
-            rows = 0
-
-    correlations = safe_list((state.get("correlations") or {}).get("pairs"))
-    dataset_health = state.get("dataset_health") or {}
-    health_score = dataset_health.get("health_score", dataset_health.get("health", 0))
-    try:
-        health_score = float(health_score)
-    except Exception:
-        health_score = 0.0
-
-    anomaly_details = state.get("anomaly_details") or []
-    anomaly_count = dataset_health.get("anomaly_count", len(anomaly_details) if anomaly_details else 0)
-    try:
-        anomaly_count = int(anomaly_count)
-    except Exception:
-        anomaly_count = len(anomaly_details) if anomaly_details else 0
-
-    # 1) Strong correlations vs dataset health
-    strong_relationships = [p for p in correlations if p.get("strength") in ("strong", "very strong")]
-    if strong_relationships:
-        if health_score < 60:
-            conflicts.append({
-                "type": "correlation_vs_health",
-                "severity": "high",
-                "message": "Strong correlations exist but dataset health is low; results may be unreliable.",
-                "affected_pairs": [p.get("pair") for p in strong_relationships[:10]],
-                "health_score": health_score
-            })
-        elif health_score < 80:
-            conflicts.append({
-                "type": "correlation_vs_health",
-                "severity": "medium",
-                "message": "Strong correlations detected but dataset health is not optimal.",
-                "affected_pairs": [p.get("pair") for p in strong_relationships[:10]],
-                "health_score": health_score
+            ranked.append({
+                "type": "correlation",
+                "priority": priority,
+                "message": explanation,
+                "score": round(strength_value, 3),
+                "strength": semantic_strength
             })
 
-    # 2) Small sample size warning (may inflate correlations)
-    if rows and rows < 10 and correlations:
-        conflicts.append({
-            "type": "sample_size_warning",
-            "severity": "medium",
-            "message": f"Small dataset (n={rows}) may produce unstable or inflated correlation estimates.",
-            "sample_size": rows
-        })
 
-    # 3) High-quality dataset but few/absent strong signals
-    if health_score > 80 and not strong_relationships:
-        conflicts.append({
-            "type": "signal_absence",
-            "severity": "low",
-            "message": "Dataset quality is high but there are few strong statistical relationships.",
-            "health_score": health_score
-        })
+    ranked.sort(key=lambda x: x["score"], reverse=True)
 
-    # 4) Strong correlations that are not statistically significant
-    for p in strong_relationships:
-        p_value = p.get("p_value", 1.0)
-        try:
-            pv = float(p_value)
-        except Exception:
-            pv = 1.0
-        # treat p >= 0.05 as not significant for the purposes of conflict detection
-        if pv >= 0.05:
-            conflicts.append({
-                "type": "strong_not_significant",
-                "severity": "high",
-                "message": f"Pair {p.get('pair')} shows a large effect ({p.get('pearson')}) but is not statistically significant (p={pv}).",
-                "pair": p.get("pair"),
-                "pearson": p.get("pearson"),
-                "p_value": pv
-            })
-
-    # 5) Anomalies / outliers summary
-    if anomaly_count > 0:
-        ratio = (anomaly_count / rows) if rows and rows > 0 else 1.0
-        if ratio >= 0.10:
-            sev = "high"
-        elif ratio >= 0.02:
-            sev = "medium"
-        else:
-            sev = "low"
-        conflicts.append({
-            "type": "anomalies_detected",
-            "severity": sev,
-            "message": f"{anomaly_count} anomaly events detected (~{ratio:.2%} of rows).",
-            "anomaly_count": anomaly_count,
-            "anomaly_ratio": round(ratio, 4)
-        })
-
-    # 6) Dominance (single-value dominated columns)
-    dominance = dataset_health.get("dominance_issues", 0)
-    try:
-        dom_count = int(dominance)
-    except Exception:
-        dom_count = 0
-    if dom_count > 0:
-        conflicts.append({
-            "type": "dominance_issues",
-            "severity": "medium",
-            "message": f"{dom_count} column(s) appear to be dominated by a single value, which can bias analysis.",
-            "dominance_issues": dom_count
-        })
-
-    # 7) Duplicate correlation entries (data hygiene)
-    pair_names = [p.get("pair") for p in correlations if p.get("pair")]
-    dup_pairs = [x for x in set(pair_names) if pair_names.count(x) > 1]
-    if dup_pairs:
-        conflicts.append({
-            "type": "duplicate_correlation_entries",
-            "severity": "low",
-            "message": f"Duplicate correlation entries detected for pairs: {', '.join(dup_pairs[:10])}.",
-            "duplicates": dup_pairs[:20]
-        })
-
-    # 8) Columns with high missingness
-    if df is not None:
-        try:
-            # missing_by_col are percentages (0..100)
-            missing_by_col = (df.isna().mean() * 100).to_dict()
-            cols_high_missing = [col for col, pct in missing_by_col.items() if pct >= 50.0]
-            cols_medium_missing = [col for col, pct in missing_by_col.items() if 20.0 <= pct < 50.0]
-            if cols_high_missing:
-                conflicts.append({
-                    "type": "high_missingness",
-                    "severity": "high",
-                    "message": f"Columns with >=50% missing values: {len(cols_high_missing)}",
-                    "columns": cols_high_missing[:20],
-                    "percent_missing": {c: round(missing_by_col.get(c, 0.0), 2) for c in cols_high_missing[:20]}
-                })
-            elif cols_medium_missing:
-                conflicts.append({
-                    "type": "moderate_missingness",
-                    "severity": "medium",
-                    "message": f"Columns with 20–50% missing values: {len(cols_medium_missing)}",
-                    "columns": cols_medium_missing[:20]
-                })
-        except Exception as e:
-            # don't fail the pipeline because a missingness check failed
-            print("resolve_conflicts: missingness check failed:", e)
-
-    # De-duplicate conflicts (simple heuristic by type+message)
-    seen = set()
-    unique_conflicts = []
-    for c in conflicts:
-        key = (c.get("type"), c.get("message"))
-        if key not in seen:
-            seen.add(key)
-            unique_conflicts.append(c)
-
-    # Write back into state and return
-    state["conflicts"] = unique_conflicts
-    return state
-
-def detect_anomalies(state):
-    """
-    Lightweight anomaly detector: flags extreme values beyond mean ± 4*std per numeric column.
-    Writes state['anomaly_details'] (list) and updates dataset_health['anomaly_count'].
-    """
-    if not state or not isinstance(state, dict):
-        return state
-
-    df = state.get("df")
-    state["anomaly_details"] = []
-
-    if df is None:
-        # ensure dataset_health contains anomaly_count
-        dh = state.setdefault("dataset_health", {})
-        dh["anomaly_count"] = dh.get("anomaly_count", 0)
-        return state
-
-    numeric_cols = df.select_dtypes(include=[np.number]).columns
-    row_mask = pd.Series(False, index=df.index)  # rows flagged at least once
-    details = []
-
-    for col in numeric_cols:
-        series = df[col].dropna()
-        if series.empty:
-            continue
-        mean = series.mean()
-        std = series.std()
-        if std == 0 or np.isnan(std):
-            continue
-        outlier_mask = (df[col] > mean + 4 * std) | (df[col] < mean - 4 * std)
-        outlier_count = int(outlier_mask.sum())
-        if outlier_count > 0:
-            details.append({
-                "column": col,
-                "count": outlier_count,
-                "pct": round(outlier_count / max(1, len(series)), 4)
-            })
-            row_mask = row_mask | outlier_mask.fillna(False)
-
-    total_row_anomalies = int(row_mask.sum())
-    state["anomaly_details"] = details
-    dh = state.setdefault("dataset_health", {})
-    dh["anomaly_count"] = total_row_anomalies
-
-    return state
+    return ranked[:10]
 
 def generate_final_insights(ranked_insights, conflicts, narrative_summary):
     key_findings = []
@@ -1869,51 +1619,79 @@ def generate_final_insights(ranked_insights, conflicts, narrative_summary):
     }
 
 def analyze_data(file_path):
+
     df = pd.read_csv(file_path)
-    state = create_initial_state(df=df, file_path=file_path)
-    state["rows"] = len(df)
-    state["columns"] = len(df.columns)
 
-    # Profile and basic artifacts
-    state = generate_profile(state)
+    insights = {
+        "summary": [],
+        "metrics": []
+    }
 
-    # Find a chartable column (prefer numeric)
-    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    chart_col = num_cols[0] if num_cols else (df.columns[0] if len(df.columns) else None)
-    if chart_col:
-        state = generate_chart(state, chart_col)
+    numeric_columns = df.select_dtypes(include=["number"]).columns.tolist()
+    
+    for col in numeric_columns:
+        series = df[col].dropna()
 
-    # Correlations, health, anomalies, conflicts
-    state = generate_correlation_analysis(state)
-    state = generate_dataset_health(state)
-    state = detect_anomalies(state)
-    state = resolve_conflicts(state)
+        if series.empty:
+            continue
 
-    # Build a simple ranked_insights structure from correlations (example)
-    corr_pairs = state.get("correlations", {}).get("pairs", [])
-    ranked = []
-    for p in sorted(corr_pairs, key=lambda x: -abs(x.get("pearson", 0)))[:20]:
-        ranked.append({
-            "pair": p.get("pair"),
-            "pearson": p.get("pearson"),
-            "strength": p.get("strength"),
-            "confidence": "medium"  # base prior to calibration, will be numeric after calibrate_confidence
+        mean_val = series.mean()
+        std_val = series.std()
+
+        insights["metrics"].append({
+            "column": col,
+            "mean": round(float(mean_val), 2),
+            "std": round(float(std_val), 2),
+            "min": float(series.min()),
+            "max": float(series.max())
         })
-    state["ranked_insights"] = ranked
 
-    # Calibrate and stability
-    state = calibrate_confidence(state)
-    state = generate_analytical_stability(state)
+        if std_val > mean_val:
+            insights["summary"].append(f"{col} shows high variability")
+        else:
+            insights["summary"].append(f"{col} is relatively stable")
 
-    # Semantic & narrative
-    state = add_semantic_insights_to_state(state)
-    state["narrative_summary"] = generate_narrative_summary(state.get("df"), state.get("correlations", {}), state.get("dataset_health", {}))
+    chart_path = None
+    if numeric_columns:
+        try:
+            chart_path = generate_chart(df, numeric_columns[0], file_path)
+        except Exception as e:
+            print("Chart error:", e)
+    
+    # pipeline execution
+    result = run_analysis_pipeline(
+        df,
+        file_path,
+        insights
+    )
+    
+    return {
+        "rows": result["rows"],
+        "columns": result["columns"],
 
-    # Final assembly: ensure main.py keys exist (lightweight)
-    state.setdefault("final_insights", {"key_findings": state.get("insights", [])})
-    state.setdefault("contextual_synthesis", {})
-    state.setdefault("cross_theme_reasoning", {})
-    state.setdefault("executive_synthesis", {})
-    state.setdefault("recommendations", {})
+        "insights": result["insights"],
+        "profile": result["profile"],
 
-    return state
+        "correlations": result["correlations"],
+        "anomaly_details": result["anomaly_details"],
+
+        "dataset_health": result["dataset_health"],
+        "conflicts": result["conflicts"],
+        "analytical_stability": result["analytical_stability"],
+
+        "ranked_insights": result["ranked_insights"],
+        
+        "contextual_synthesis": result["contextual_synthesis"],
+
+        "cross_theme_reasoning": result["cross_theme_reasoning"],
+
+        "narrative_summary": result["narrative_summary"],
+
+        "final_insights": result["final_insights"],
+        
+        "executive_synthesis": result["executive_synthesis"] ,
+        
+        "recommendations": result["recommendations"] ,
+
+        "chart_path": chart_path
+    }

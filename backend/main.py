@@ -39,14 +39,14 @@ async def upload_file(file: UploadFile = File(...)):
     try:
         result = analyze_data(file_path)
 
-        chart_url = None
-
         chart_path = result.get("chart_path") or result.get("chart_url")
 
-        chart_url = None
-        if chart_path:
-            chart_url = "/charts/" + os.path.basename(chart_path)
-        print("MAIN.PY KEYS:", result.keys())
+        chart_url = (
+            "/charts/" + os.path.basename(chart_path)
+            if chart_path
+            else None
+        )
+            
         return {
             "status": "success",
             "data": {
@@ -81,11 +81,8 @@ async def upload_file(file: UploadFile = File(...)):
                 "recommendations" : result.get("recommendations"),
 
 
-                "chart_url": (
-                    "/charts/" + os.path.basename(result["chart_path"])
-                    if result.get("chart_path")
-                    else None
-                )
+                "chart_url": chart_url,
+                "chart_path": chart_path
             }
         }
 
