@@ -111,38 +111,52 @@ def profile_categorical_column(series):
 
 def generate_narrative_summary(df, correlations, health):
 
+    if df is None or len(df) == 0:
+        return "No dataset available for narrative generation."
+
     numeric_cols = df.select_dtypes(include=["number"]).columns
     categorical_cols = df.select_dtypes(exclude=["number"]).columns
 
     summary_parts = []
 
     sample_size = len(df)
-
+    print("NARRATIVE SAMPLE SIZE:", sample_size)
     correlation_pairs = correlations.get("pairs", [])
-    
+
     health_score = (
         health.get("health_score")
         or health.get("completeness_score")
         or 0
     )
-    
+
+    anomaly_count = health.get("anomaly_count", 0)
+
+    # ------------------------------------------------
     # Dataset quality interpretation
-    if health_score >= 80:
+    # ------------------------------------------------
+
+    if health_score >= 90:
+
         summary_parts.append(
-            "The dataset is high quality with minimal structural issues."
+            "The dataset demonstrates strong structural quality with high completeness and minimal integrity concerns."
         )
 
-    elif health_score >= 50:
+    elif health_score >= 70:
+
         summary_parts.append(
-            "The dataset is moderately reliable but contains some quality concerns."
+            "The dataset is generally reliable, although some structural inconsistencies may affect analytical precision."
         )
 
     else:
+
         summary_parts.append(
-            "The dataset contains significant quality or consistency issues."
+            "The dataset contains substantial quality limitations that may reduce analytical reliability."
         )
 
+    # ------------------------------------------------
     # Correlation interpretation
+    # ------------------------------------------------
+
     strong_pairs = [
         pair for pair in correlation_pairs
         if pair.get("strength") in ["strong", "very strong"]
@@ -161,21 +175,23 @@ def generate_narrative_summary(df, correlations, health):
         )
 
         pair_name = top_pair["pair"]
+
         corr_value = top_pair["pearson"]
 
-        direction = "positive"
-
-        if corr_value < 0:
-            direction = "negative"
-
-        summary_parts.append(
-            f"The dataset demonstrates a very strong {direction} relationship "
-            f"between {pair_name}."
+        direction = (
+            "positive"
+            if corr_value >= 0
+            else "negative"
         )
 
-        if len(strong_pairs) > 1:
+        summary_parts.append(
+            f"The strongest analytical relationship identified was a {direction} association between {pair_name}."
+        )
+
+        if len(strong_pairs) >= 3:
+
             summary_parts.append(
-                f"Multiple variables exhibit strong statistical alignment patterns."
+                "Several variables exhibit tightly aligned statistical behavior, suggesting consistent structural patterns across the dataset."
             )
 
     elif moderate_pairs:
@@ -186,40 +202,68 @@ def generate_narrative_summary(df, correlations, health):
         )
 
         pair_name = top_pair["pair"]
-        corr_value = top_pair["pearson"]
 
-        direction = "positive"
-
-        if corr_value < 0:
-            direction = "negative"
+        direction = (
+            "positive"
+            if top_pair.get("pearson", 0) >= 0
+            else "negative"
+        )
 
         summary_parts.append(
-            f"A moderate {direction} relationship exists between {pair_name}."
+            f"A moderate {direction} relationship was detected between {pair_name}."
         )
 
     else:
 
         summary_parts.append(
-            "Most detected statistical relationships are relatively weak."
+            "Most observed statistical relationships were weak, indicating limited linear dependency between variables."
         )
 
+    # ------------------------------------------------
+    # Anomaly interpretation
+    # ------------------------------------------------
+
+    if anomaly_count > 0:
+
+        anomaly_pct = round(
+            (anomaly_count / max(sample_size, 1)) * 100,
+            2
+        )
+
+        if anomaly_pct < 2:
+
+            summary_parts.append(
+                f"A small number of statistical outliers were detected ({anomaly_pct}% of records), though overall distribution behavior remains stable."
+            )
+
+        else:
+
+            summary_parts.append(
+                f"The dataset contains a noticeable concentration of outliers ({anomaly_pct}% of records), which may influence aggregate statistical interpretations."
+            )
+
+    # ------------------------------------------------
     # Reliability interpretation
+    # ------------------------------------------------
+
     if sample_size < 10:
 
         summary_parts.append(
-            "Observed patterns should be interpreted cautiously due to limited sample size."
+            "Findings should be interpreted cautiously due to limited sample size."
         )
 
-    elif sample_size > 100 and health_score > 80:
+    elif sample_size >= 1000 and health_score >= 80:
 
         summary_parts.append(
-            "Observed analytical patterns appear stable across the dataset."
+            "The dataset size is sufficiently large to support relatively stable analytical inference."
         )
 
+    # ------------------------------------------------
     # Dataset structure
+    # ------------------------------------------------
+
     summary_parts.append(
-        f"The dataset contains {len(numeric_cols)} numeric and "
-        f"{len(categorical_cols)} categorical features."
+        f"The dataset includes {len(numeric_cols)} numeric features and {len(categorical_cols)} categorical features."
     )
 
     return " ".join(summary_parts)
@@ -1177,27 +1221,101 @@ def compute_final_confidence(
     anomalies
 ):
     """
-    Small, stable wrapper that returns a confidence in 0.1..0.95 (kept as 0..1 scale for Phase 1).
-    This is a single place where final numeric confidence is computed for calibration steps.
+    Computes calibrated confidence score in 0.1 .. 0.95 range.
+
+    Philosophy:
+    - strong statistical signals should survive moderate penalties
+    - small datasets reduce certainty but should not destroy high-quality findings
+    - poor dataset health reduces confidence meaningfully
+    - conflicts/anomalies apply soft penalties, not catastrophic collapse
     """
+
     try:
         score = float(base)
     except Exception:
         score = 0.5
 
-    size_factor = min(1.0, sample_size / 30) if sample_size is not None else 0.0
-    score *= (0.7 + 0.3 * size_factor)
+    # ----------------------------
+    # Strength bonus
+    # ----------------------------
 
-    score *= (0.7 + 0.3 * (health_score / 100 if health_score is not None else 0.0))
+    strength_bonus = {
+        "negligible": 0.85,
+        "weak": 0.92,
+        "moderate": 1.0,
+        "strong": 1.08,
+        "very strong": 1.15
+    }
 
-    score *= (1 - min(0.3, 0.1 * (conflicts if conflicts is not None else 0)))
+    score *= strength_bonus.get(strength, 1.0)
 
-    score *= (1 - min(0.25, 0.08 * (anomalies if anomalies is not None else 0)))
+    # ----------------------------
+    # Sample size adjustment
+    # ----------------------------
 
-    if strength in ["strong", "very strong"]:
-        score *= 1.1
+    # smoother scaling
+    # avoids crushing small but valid datasets
 
-    return max(0.1, min(score, 0.95))
+    if sample_size is None:
+        sample_factor = 0.75
+
+    elif sample_size < 5:
+        sample_factor = 0.65
+
+    elif sample_size < 10:
+        sample_factor = 0.78
+
+    elif sample_size < 30:
+        sample_factor = 0.88
+
+    elif sample_size < 100:
+        sample_factor = 0.95
+
+    else:
+        sample_factor = 1.0
+
+    score *= sample_factor
+
+    # ----------------------------
+    # Dataset health adjustment
+    # ----------------------------
+
+    try:
+        normalized_health = max(0.0, min(1.0, health_score / 100))
+    except Exception:
+        normalized_health = 0.5
+
+    # softer health weighting
+    health_factor = 0.75 + (normalized_health * 0.25)
+
+    score *= health_factor
+
+    # ----------------------------
+    # Conflict penalty
+    # ----------------------------
+
+    conflict_count = conflicts if conflicts is not None else 0
+
+    # soft diminishing penalties
+    conflict_penalty = min(0.20, conflict_count * 0.05)
+
+    score *= (1 - conflict_penalty)
+
+    # ----------------------------
+    # Anomaly penalty
+    # ----------------------------
+
+    anomaly_count = anomalies if anomalies is not None else 0
+
+    anomaly_penalty = min(0.15, anomaly_count * 0.03)
+
+    score *= (1 - anomaly_penalty)
+
+    # ----------------------------
+    # Clamp final score
+    # ----------------------------
+
+    return round(max(0.1, min(score, 0.95)), 3)
 
 def run_analysis_pipeline(df, file_path, insights):
 
@@ -1338,6 +1456,58 @@ def run_analysis_pipeline(df, file_path, insights):
         "recommendations": recommendations
     }
 
+def is_identifier_column(col_name, series):
+    """
+    Detect likely identifier columns that should not participate
+    in statistical analysis.
+    """
+
+    if not col_name:
+        return False
+
+    name = col_name.lower().replace("_", "").replace(" ", "")
+
+    identifier_keywords = [
+        "id",
+        "uuid",
+        "employeeid",
+        "userid",
+        "customerid",
+        "serial",
+        "serialno",
+        "index"
+    ]
+
+    # keyword match
+    if any(keyword in name for keyword in identifier_keywords):
+        return True
+
+    # non-numeric columns cannot be identifier sequences here
+    if not pd.api.types.is_numeric_dtype(series):
+        return False
+
+    clean = series.dropna()
+
+    if len(clean) < 3:
+        return False
+
+    # high uniqueness ratio
+    uniqueness_ratio = clean.nunique() / len(clean)
+
+    if uniqueness_ratio > 0.95:
+
+        # monotonic increasing/decreasing
+        if clean.is_monotonic_increasing or clean.is_monotonic_decreasing:
+            return True
+
+        # integer-like sequential behavior
+        diffs = clean.diff().dropna()
+
+        if not diffs.empty and diffs.nunique() <= 2:
+            return True
+
+    return False
+
 def generate_correlation_analysis(state):
     """
     Writes state['correlations'] = {"pairs": [...]}
@@ -1351,7 +1521,17 @@ def generate_correlation_analysis(state):
         state["correlations"] = {"pairs": results}
         return state
 
-    numeric_df = df.select_dtypes(include=[np.number])
+    numeric_df = df.select_dtypes(include=[np.number]).copy()
+
+    # Remove likely identifier columns
+    filtered_columns = []
+
+    for col in numeric_df.columns:
+
+        if not is_identifier_column(col, numeric_df[col]):
+            filtered_columns.append(col)
+
+    numeric_df = numeric_df[filtered_columns]
 
     if numeric_df.shape[1] < 2:
         state["correlations"] = {"pairs": results}
@@ -1802,9 +1982,17 @@ def resolve_conflicts(state):
 
 def detect_anomalies(state):
     """
-    Lightweight anomaly detector: flags extreme values beyond mean ± 4*std per numeric column.
-    Writes state['anomaly_details'] (list) and updates dataset_health['anomaly_count'].
+    Robust anomaly detection using IQR method.
+
+    Detects outliers using:
+        lower = Q1 - 1.5 * IQR
+        upper = Q3 + 1.5 * IQR
+
+    Updates:
+    - state["anomaly_details"]
+    - state["dataset_health"]["anomaly_count"]
     """
+
     if not state or not isinstance(state, dict):
         return state
 
@@ -1812,35 +2000,67 @@ def detect_anomalies(state):
     state["anomaly_details"] = []
 
     if df is None:
-        # ensure dataset_health contains anomaly_count
         dh = state.setdefault("dataset_health", {})
         dh["anomaly_count"] = dh.get("anomaly_count", 0)
         return state
 
     numeric_cols = df.select_dtypes(include=[np.number]).columns
-    row_mask = pd.Series(False, index=df.index)  # rows flagged at least once
+
+    row_mask = pd.Series(False, index=df.index)
     details = []
 
     for col in numeric_cols:
+
+        # skip identifier-like columns
+        if is_identifier_column(col, df[col]):
+            continue
+
         series = df[col].dropna()
-        if series.empty:
+
+        if len(series) < 5:
             continue
-        mean = series.mean()
-        std = series.std()
-        if std == 0 or np.isnan(std):
-            continue
-        outlier_mask = (df[col] > mean + 4 * std) | (df[col] < mean - 4 * std)
-        outlier_count = int(outlier_mask.sum())
-        if outlier_count > 0:
-            details.append({
-                "column": col,
-                "count": outlier_count,
-                "pct": round(outlier_count / max(1, len(series)), 4)
-            })
-            row_mask = row_mask | outlier_mask.fillna(False)
+
+        try:
+            q1 = series.quantile(0.25)
+            q3 = series.quantile(0.75)
+
+            iqr = q3 - q1
+
+            if iqr == 0 or pd.isna(iqr):
+                continue
+
+            lower_bound = q1 - (1.5 * iqr)
+            upper_bound = q3 + (1.5 * iqr)
+
+            outlier_mask = (
+                (df[col] < lower_bound) |
+                (df[col] > upper_bound)
+            )
+
+            outlier_count = int(outlier_mask.sum())
+
+            if outlier_count > 0:
+
+                details.append({
+                    "column": col,
+                    "count": outlier_count,
+                    "pct": round(
+                        outlier_count / max(1, len(series)),
+                        4
+                    ),
+                    "lower_bound": round(float(lower_bound), 2),
+                    "upper_bound": round(float(upper_bound), 2)
+                })
+
+                row_mask = row_mask | outlier_mask.fillna(False)
+
+        except Exception as e:
+            print(f"Anomaly detection error for {col}: {e}")
 
     total_row_anomalies = int(row_mask.sum())
+
     state["anomaly_details"] = details
+
     dh = state.setdefault("dataset_health", {})
     dh["anomaly_count"] = total_row_anomalies
 
@@ -1877,9 +2097,45 @@ def analyze_data(file_path):
     # Profile and basic artifacts
     state = generate_profile(state)
 
-    # Find a chartable column (prefer numeric)
+    # Find meaningful chartable numeric column
     num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    chart_col = num_cols[0] if num_cols else (df.columns[0] if len(df.columns) else None)
+
+    filtered_cols = []
+
+    for col in num_cols:
+
+        if not is_identifier_column(col, df[col]):
+            filtered_cols.append(col)
+
+    chart_col = None
+
+    # Prefer high-variance meaningful features
+    if filtered_cols:
+
+        variance_map = {}
+
+        for col in filtered_cols:
+
+            try:
+                variance_map[col] = df[col].std()
+            except Exception:
+                variance_map[col] = 0
+
+        sorted_cols = sorted(
+            variance_map.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        chart_col = sorted_cols[0][0]
+
+    elif num_cols:
+        # fallback
+        chart_col = num_cols[0]
+
+    elif len(df.columns):
+        chart_col = df.columns[0]
+
     if chart_col:
         state = generate_chart(state, chart_col)
 
@@ -1893,12 +2149,30 @@ def analyze_data(file_path):
     corr_pairs = state.get("correlations", {}).get("pairs", [])
     ranked = []
     for p in sorted(corr_pairs, key=lambda x: -abs(x.get("pearson", 0)))[:20]:
+        pearson_value = abs(p.get("pearson", 0))
+
+        if pearson_value >= 0.9:
+            base_confidence = 0.9
+
+        elif pearson_value >= 0.75:
+            base_confidence = 0.8
+
+        elif pearson_value >= 0.6:
+            base_confidence = 0.7
+
+        elif pearson_value >= 0.4:
+            base_confidence = 0.55
+
+        else:
+            base_confidence = 0.4
+
         ranked.append({
             "pair": p.get("pair"),
             "pearson": p.get("pearson"),
             "strength": p.get("strength"),
-            "confidence": "medium"  # base prior to calibration, will be numeric after calibrate_confidence
+            "confidence": base_confidence
         })
+
     state["ranked_insights"] = ranked
 
     # Calibrate and stability
