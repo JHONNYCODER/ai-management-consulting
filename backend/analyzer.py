@@ -1189,61 +1189,80 @@ def compute_insight_confidence(
 
     return confidence
 
-
 def generate_ranked_insights(state):
     """
     Produces raw_signals: pure statistics only.
     No messages, no justifications, no confidence labels.
     """
+
     state = state or {}
-    pairs = (state.get("correlations") or {}).get("pairs") or []
-    raw = []
 
-    sample_size = state.get("rows", 0)
-    health_score = (
-        (state.get("dataset_health") or {}).get("health_score", 50)
-    )
-    conflict_count = len(state.get("conflicts") or [])
+    try:
 
-    for item in pairs:
-        strength_value = abs(item.get("pearson", 0))
-        semantic_strength = item.get("strength", "weak")
-        significance = item.get("significance", "not significant")
-        pair_name = item.get("pair", "unknown pair")
-        pearson_value = item.get("pearson", 0)
+        pairs = (state.get("correlations") or {}).get("pairs") or []
+        raw = []
 
-        if strength_value > 0.7:
-            priority = "high"
-        elif strength_value >= 0.35 and significance == "highly significant":
-            priority = "medium"
-        else:
-            priority = "low"
+        sample_size = state.get("rows", 0)
 
-        confidence = compute_insight_confidence(
-            significance=significance,
-            sample_size=sample_size,
-            health_score=health_score,
-            strength_value=strength_value,
-            conflict_count=conflict_count,
+        health_score = (
+            (state.get("dataset_health") or {}).get("health_score", 50)
         )
 
-        raw.append({
-            "type": "correlation",
-            "priority": priority,
-            "score": round(strength_value, 3),
-            "strength": semantic_strength,
-            "strength_value": strength_value,
-            "pearson": pearson_value,
-            "significance": significance,
-            "confidence": confidence,
-            "p_value": item.get("p_value"),
-            "pair": pair_name,
-        })
+        conflict_count = len(state.get("conflicts") or [])
 
-    raw.sort(key=lambda x: x.get("score", 0), reverse=True)
-    state["raw_signals"] = raw[:10]
+        for item in pairs:
+
+            strength_value = abs(item.get("pearson", 0))
+            semantic_strength = item.get("strength", "weak")
+            significance = item.get("significance", "not significant")
+            pair_name = item.get("pair", "unknown pair")
+            pearson_value = item.get("pearson", 0)
+
+            if strength_value > 0.7:
+                priority = "high"
+
+            elif (
+                strength_value >= 0.35
+                and significance == "highly significant"
+            ):
+                priority = "medium"
+
+            else:
+                priority = "low"
+
+            confidence = compute_insight_confidence(
+                significance=significance,
+                sample_size=sample_size,
+                health_score=health_score,
+                strength_value=strength_value,
+                conflict_count=conflict_count,
+            )
+
+            raw.append({
+                "type": "correlation",
+                "priority": priority,
+                "score": round(strength_value, 3),
+                "strength": semantic_strength,
+                "strength_value": strength_value,
+                "pearson": pearson_value,
+                "significance": significance,
+                "confidence": confidence,
+                "p_value": item.get("p_value"),
+                "pair": pair_name,
+            })
+
+        raw.sort(
+            key=lambda x: x.get("score", 0),
+            reverse=True
+        )
+
+        state["raw_signals"] = raw[:10]
+
+    except Exception as e:
+
+        state["raw_signals"] = []
+
     return state
-
 
 def calibrate_confidence(state):
     if not state or not isinstance(state, dict):
@@ -1557,11 +1576,6 @@ def generate_derived_signals(state):
     No scoring, no confidence computation.
     """
     raw = state.get("raw_signals") or []
-    health = state.get("dataset_health") or {}
-    conflicts = state.get("conflicts") or []
-
-    health_score = health.get("health_score", 0)
-    sample_size = state.get("rows", 0)
 
     derived = []
     for item in raw:
@@ -1571,7 +1585,6 @@ def generate_derived_signals(state):
         pearson_value = item.get("pearson", 0)
         score = item.get("score", 0)
         confidence = item.get("confidence", 0.5)
-        ctype = item.get("type", "unknown")
 
         # Direction
         if pearson_value > 0:
@@ -1626,18 +1639,10 @@ def generate_derived_signals(state):
         # Justification
         boosts = []
         penalties = []
-        base_signal = f"{ctype} signal strength {score}"
+        base_signal = f"signal strength {score}"
 
         if score > 0.7:
             boosts.append("strong statistical signal")
-        if health_score > 80:
-            boosts.append("high dataset quality")
-        if health_score < 60:
-            penalties.append("low dataset quality")
-        if sample_size < 10:
-            penalties.append("small dataset size")
-        if conflicts:
-            penalties.append("conflicting signals detected")
 
         if len(penalties) == 0:
             final_reason = "Strong and reliable signal"
@@ -1808,11 +1813,15 @@ def generate_cross_theme_reasoning(state):
                 "overlap_score": overlap,
             })
 
-    total_overlap = sum(i.get("overlap_score", 0) for i in interactions)
-    max_possible_overlap = len(theme_bundles) * (len(theme_bundles) - 1) / 2
+    conflicts = state.get("conflicts") or []
+
     conflict_pressure = (
-        round(total_overlap / max_possible_overlap, 3)
-        if max_possible_overlap > 0 else 0
+        len(conflicts) / (len(theme_bundles) + 1)
+    )
+
+    conflict_pressure = round(
+        min(conflict_pressure, 1.0),
+        3
     )
 
     state["cross_theme_reasoning"] = {
@@ -1947,17 +1956,30 @@ def generate_executive_synthesis(state):
         t.get("theme") for t in dominant_themes[:3] if t.get("theme")
     ]
 
-    # ── Key drivers metadata (read bundles, no computation) ──
-    key_drivers_meta = []
+    # ── Key drivers ──
+    key_drivers = []
+
     for t in dominant_themes[:3]:
+
         if not t.get("theme"):
             continue
+
         bundle = t.get("signal_strength_bundle", {})
-        key_drivers_meta.append({
-            "name": t["theme"],
-            "signal_strength_bundle": bundle,
-            "variables": t.get("variables", []),
-        })
+
+        signal_count = bundle.get("signal_count", 0)
+
+        normalized_strength = bundle.get(
+            "normalized_strength",
+            0
+        )
+
+        if (
+            signal_count <= 0
+            or normalized_strength < 0.15
+        ):
+            continue
+
+        key_drivers.append(t.get("theme"))
 
     # ── Risk signals ──
     risk_signals = []
