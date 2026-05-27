@@ -1,17 +1,33 @@
 from fastapi.staticfiles import StaticFiles
-from fastapi import FastAPI, UploadFile, File
-import pandas as pd
-import matplotlib.pyplot as plt
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import shutil
 import os
 
-from analyzer import analyze_data
+from analytics_pipeline.orchestrator import run_pipeline
+from analytics_pipeline.config import PipelineConfig
+from backend.schemas.analytics_response import AnalyticsResponse
+from backend.mappers import map_state_to_api_response
+
+from backend.ai_client import generate_ai_insight
 
 app = FastAPI()
 
-app.mount("/charts", StaticFiles(directory="uploads"), name="charts")
+# ─────────────────────────────────────────────
+# DIRECTORY & STATIC FILE SETUP
+# ─────────────────────────────────────────────
+# __file__ is backend/main.py, so dirname is backend/
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Mount only ONCE
+app.mount("/charts", StaticFiles(directory=UPLOAD_FOLDER), name="charts")
+
+# ─────────────────────────────────────────────
+# MIDDLEWARE
+# ─────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,77 +36,47 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-UPLOAD_FOLDER = "uploads"
-
+# ─────────────────────────────────────────────
+# ROUTES
+# ─────────────────────────────────────────────
 @app.get("/")
 def home():
     return {
         "message": "AI Management Consulting System Running Successfully"
     }
 
-@app.post("/upload")
+@app.post("/upload", response_model=AnalyticsResponse, response_model_exclude_none=True)
 async def upload_file(file: UploadFile = File(...)):
-   
-    file_path = os.path.join(UPLOAD_FOLDER, file.filename)
+    # 1. Secure the filename to prevent directory traversal attacks
+    safe_filename = os.path.basename(file.filename)
+    file_path = os.path.join(UPLOAD_FOLDER, safe_filename)
 
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
+    # 2. Save the file
     try:
-        result = analyze_data(file_path)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"File save failed: {str(e)}")
 
-        chart_path = result.get("chart_path") or result.get("chart_url")
+    # 3. Run pipeline and map to API response
+    try:
+        config = PipelineConfig(output_dir=UPLOAD_FOLDER)
+        pipeline_result = run_pipeline(file_path, config=config)
+        
+          # ✨ INJECT THE AI BRAIN ✨
+        if pipeline_result.state.get("llm_payload"):
+            ai_narrative = generate_ai_insight(pipeline_result.state["llm_payload"])
+          # Overwrite the robotic narrative with the AI narrative
+            pipeline_result.state["narrative_summary"]["full_narrative"] = ai_narrative
+            pipeline_result.state["executive_synthesis"]["executive_summary"] = ai_narrative
 
-        chart_url = (
-            "/charts/" + os.path.basename(chart_path)
-            if chart_path
-            else None
-        )
-            
-        return {
-            "status": "success",
-            "data": {
-                "file_name": file.filename,
-
-                "summary": {
-                    "rows": result.get("rows"),
-                    "columns": result.get("columns")
-                },
-
-                "insights": result.get("insights"),
-                "profile": result.get("profile"),
-                "correlations": result.get("correlations"),
-                "anomaly_details": result.get("anomaly_details"),
-
-                "dataset_health": result.get("dataset_health"),
-                "analytical_stability": result.get("analytical_stability"),
-                "conflicts": result.get("conflicts"),
-
-                "ranked_insights": result.get("ranked_insights"),
-               
-                "contextual_synthesis": result.get("contextual_synthesis", {}),
-               
-                "cross_theme_reasoning": result.get('cross_theme_reasoning') ,
-               
-                "narrative_summary": result.get("narrative_summary"),
-
-                "final_insights": result.get("final_insights"),
-
-                "executive_synthesis" : result.get("executive_synthesis"),
-
-                "recommendations" : result.get("recommendations"),
-
-
-                "chart_url": chart_url,
-                "chart_path": chart_path
-            }
-        }
-
+        # Use our safe mapper instead of manually building the dictionary
+        api_response = map_state_to_api_response(pipeline_result.state)
+        
+        return api_response
+        
     except Exception as e:
         import traceback
         traceback.print_exc()
-
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+        # 4. Return a proper HTTP error instead of a broken dictionary
+        raise HTTPException(status_code=500, detail=f"Pipeline execution failed: {str(e)}")
