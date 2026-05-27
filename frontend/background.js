@@ -1,98 +1,152 @@
-document.addEventListener("DOMContentLoaded", () => {
-    const canvas = document.getElementById("bg-canvas");
-    const ctx = canvas.getContext("2d");
-    
-    let width, height;
-    let stars = [];
-    let mouse = { x: undefined, y: undefined };
-    
-    const config = {
-        starColor: "rgba(255, 255, 255, 0.5)",
-        lineColor: "rgba(255, 255, 255, 0.3)",
-        starWidth: 1.5,
-        lineDistance: 120,
-        velocity: 0.15,
-        numStars: Math.floor(window.innerWidth / 8)
-    };
+(function() {    
+    var camera, scene, renderer,
+        container, stats, particle,
+        winHalfX, winHalfY,
+        height, width, fieldOfView,
+        aspectRatio, nearPlane, farPlane,
+        body, cameraZ, material,
+        i = 0,
+        count = 0,
+        Tau = Math.PI * 2,
+        mouseX = 0,
+        mouseY = 0,
+        amtX = 50,
+        amtY = 50,
+        sep = 100,
+        particles = [];
 
-    function resize() {
-        width = canvas.width = window.innerWidth;
-        height = canvas.height = window.innerHeight;
-        initStars();
+    function onDocumentReady() {
+        body = document.body;
+
+        container = document.createElement('div');
+        container.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none;';
+        body.appendChild(container);
+
+        height = window.innerHeight;
+        winHalfY = height / 2;
+        width = window.innerWidth;
+        winHalfX = width / 2;
+        fieldOfView = 75;
+        aspectRatio = width / height;
+        nearPlane = 1;
+        farPlane = 10000;
+        cameraZ = 750;
+
+        document.addEventListener('mousemove', onDocumentMouseMove);
+        document.addEventListener('touchstart', onDocumentTouchStart);
+        document.addEventListener('touchmove', onDocumentTouchMove);
+        window.addEventListener('resize', onWindowResize);
+    
+        rendererer(onRendererRenderered);
     }
 
-    function initStars() {
-        stars = [];
-        for (let i = 0; i < config.numStars; i++) {
-            stars.push({
-                x: Math.random() * width,
-                y: Math.random() * height,
-                vx: (config.velocity - Math.random() * 0.5),
-                vy: (config.velocity - Math.random() * 0.5),
-                radius: Math.random() * config.starWidth
-            });
+    function rendererer(complete) {
+        camera = new THREE.PerspectiveCamera(fieldOfView, aspectRatio, nearPlane, farPlane);
+        camera.position.z = cameraZ;
+
+        scene = new THREE.Scene();
+
+        // Modern way to create a circle sprite
+        var spriteCanvas = document.createElement('canvas');
+        spriteCanvas.width = 32;
+        spriteCanvas.height = 32;
+        var spriteCtx = spriteCanvas.getContext('2d');
+        spriteCtx.beginPath();
+        spriteCtx.arc(16, 16, 16, 0, Tau, true);
+        spriteCtx.fillStyle = '#ffffff';
+        spriteCtx.fill();
+        var spriteTexture = new THREE.CanvasTexture(spriteCanvas);
+
+        material = new THREE.SpriteMaterial({ map: spriteTexture, transparent: true, color: 0xffffff });
+
+        for (var ix = 0, lx = amtX; ix < lx; ix++) {
+            for (var iy = 0, ly = amtY; iy < ly; iy++) {
+                particle = particles[i++] = new THREE.Sprite(material);
+                particle.position.x = ix * sep - ((amtX * sep) / 2);
+                particle.position.z = iy * sep - ((amtY * sep) / 2);
+                scene.add(particle);
+            }
         }
+
+        // Modern WebGL Renderer
+        renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        renderer.setClearColor(0x050810, 1); // Space black background
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(width, height);
+
+        container.appendChild(renderer.domElement);
+        
+        if (complete) {
+            complete();
+        }
+    }
+
+    function onRendererRenderered() {
+        stats = new Stats();
+        stats.domElement.style.position = 'absolute';
+        stats.domElement.style.top = stats.domElement.style.right = '0';
+        stats.domElement.style.display = 'none'; 
+        container.appendChild(stats.domElement);
+    }
+
+    function onDocumentMouseMove(e) {
+        mouseX = e.clientX - winHalfX;
+        mouseY = e.clientY - winHalfY;
+    }
+
+    function onDocumentTouchStart(e) {
+        if (e.touches.length === 1) {
+            e.preventDefault();
+            mouseX = e.touches[0].pageX - winHalfX;
+            mouseY = e.touches[0].pageY - winHalfY;
+        }
+    }
+
+    function onDocumentTouchMove(e) {
+        if (e.touches.length === 1) {
+            e.preventDefault();
+            mouseX = e.touches[0].pageX - winHalfX;
+            mouseY = e.touches[0].pageY - winHalfY;
+        }
+    }
+
+    function onWindowResize() {
+        height = window.innerHeight;
+        winHalfY = height / 2;
+        width = window.innerWidth;
+        winHalfX = width / 2;
+
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
     }
 
     function animate() {
-        ctx.clearRect(0, 0, width, height);
-        
-        ctx.fillStyle = config.starColor;
-        ctx.strokeStyle = config.lineColor;
-        ctx.lineWidth = 0.5;
-
-        for (let i = 0; i < stars.length; i++) {
-            let s = stars[i];
-            s.x += s.vx;
-            s.y += s.vy;
-
-            if (s.x < 0 || s.x > width) s.vx = -s.vx;
-            if (s.y < 0 || s.y > height) s.vy = -s.vy;
-
-            ctx.beginPath();
-            ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Lines to mouse
-            if (mouse.x !== undefined) {
-                let dx = s.x - mouse.x;
-                let dy = s.y - mouse.y;
-                let dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < 150) {
-                    ctx.beginPath();
-                    ctx.moveTo(s.x, s.y);
-                    ctx.lineTo(mouse.x, mouse.y);
-                    ctx.stroke();
-                }
-            }
-
-            // Lines between stars
-            for (let j = i + 1; j < stars.length; j++) {
-                let s2 = stars[j];
-                let dx = s.x - s2.x;
-                let dy = s.y - s2.y;
-                let dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < config.lineDistance) {
-                    ctx.beginPath();
-                    ctx.moveTo(s.x, s.y);
-                    ctx.lineTo(s2.x, s2.y);
-                    ctx.stroke();
-                }
-            }
-        }
         requestAnimationFrame(animate);
+        update();
+        stats.update();
     }
 
-    window.addEventListener("resize", resize);
-    window.addEventListener("mousemove", (e) => {
-        mouse.x = e.clientX;
-        mouse.y = e.clientY;
-    });
-    window.addEventListener("mouseout", () => {
-        mouse.x = undefined;
-        mouse.y = undefined;
-    });
+    function update() {
+        // Fast, reactive camera movement
+        camera.position.x += (mouseX - camera.position.x) * 0.05;
+        camera.position.y += (-mouseY - camera.position.y) * 0.05;
+        camera.lookAt(scene.position);
+        
+        i = 0;
+        for (var ix = 0, lx = amtX; ix < lx; ix++) {
+            for (var iy = 0, ly = amtY; iy < ly; iy++) {
+                particle = particles[i++];
+                particle.position.y = (Math.sin((ix + count) * 0.3) * 50) + (Math.sin((iy + count) * 0.5) * 50);
+                particle.scale.x = particle.scale.y = (Math.sin((ix + count) * 0.3) + 1) * 4 + (Math.sin((iy + count) * 0.5) + 1) * 4;
+            }
+        }
 
-    resize();
-    animate();
-});
+        renderer.render(scene, camera);
+        count += 0.1;
+    }
+
+    document.addEventListener('DOMContentLoaded', onDocumentReady);
+    document.addEventListener('DOMContentLoaded', animate);
+
+})();

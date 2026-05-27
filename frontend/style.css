@@ -18,11 +18,12 @@
 }
 
 body.space-theme {
-    background: var(--bg-deep);
-    color: var(--text-main);
-    font-family: 'Inter', sans-serif;
-    min-height: 100vh;
-    overflow-x: hidden;
+    background: transparent;
+        /* CHANGED: Was var(--bg-deep), now transparent so 3D shows! */
+        color: var(--text-main);
+        font-family: 'Inter', sans-serif;
+        min-height: 100vh;
+        overflow-x: hidden;
 }
 
 /* Interactive Constellation Canvas */
@@ -105,6 +106,8 @@ body.space-theme {
     flex-direction: column;
     gap: 1.5rem;
     padding: 0 1.5rem;
+    position: relative;
+    z-index: 1;
 }
 
 .main-grid {
