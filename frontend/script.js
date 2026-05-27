@@ -40,16 +40,18 @@ window.uploadFile = async function () {
         const result = data.data;
         renderDashboard(result);
 
-        // ✅ SMOOTH AUTO-SCROLL
-        document.getElementById("stats-grid").scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-        // UI Success State
-        statsGrid.classList.remove("hidden");
-
         // UI Success State
         statsGrid.classList.remove("hidden");
         resultsContainer.classList.remove("hidden");
         uploadBtn.textContent = "🚀 Launch New Analysis";
+
+        // ✅ BUTTERY SMOOTH AUTO-SCROLL
+        setTimeout(() => {
+            const element = document.getElementById("stats-grid");
+            const y = element.getBoundingClientRect().top + window.pageYOffset - 30; // 30px buffer from top
+            window.scrollTo({ top: y, behavior: 'smooth' });
+        }, 300); // 300ms delay ensures DOM is fully painted
+
     } catch (error) {
         console.error("Upload failed:", error);
         errorToast.textContent = `⚠️ ${error.message}`;
@@ -64,7 +66,7 @@ window.uploadFile = async function () {
         fileInput.value = ""; 
         selectBtn.classList.remove("hidden");
         uploadBtn.classList.add("hidden");
-        fileNameDisplay.textContent = "";
+        // fileNameDisplay.textContent = ""; // Left commented out so the name stays visible!
     }
 };
 
@@ -109,170 +111,202 @@ function renderDashboard(d) {
     const narrativeEl = document.getElementById("ai-narrative");
     const narrativeData = d.narrative_summary?.full_narrative || "";
     
-    if (Array.isArray(narrativeData)) {
-        narrativeEl.innerHTML = `<ul class="ai-points-list">` + 
-            narrativeData.map(p => `
-                <li class="ai-point-item">
-                    <div class="ai-analysis-text">📊 ${p.analysis || ''}</div>
-                    <div class="ai-suggestion-text">${p.suggestion || ''}</div>
-                </li>
-            `).join("") + `</ul>`;
-    } else {
-        narrativeEl.textContent = narrativeData || "AI analysis pending. Review metrics below.";
+    if (narrativeEl) {
+        if (Array.isArray(narrativeData)) {
+            narrativeEl.innerHTML = `<ul class="ai-points-list">` + 
+                narrativeData.map(p => `
+                    <li class="ai-point-item">
+                        <div class="ai-analysis-text">📊 ${p.analysis || ''}</div>
+                        <div class="ai-suggestion-text">${p.suggestion || ''}</div>
+                    </li>
+                `).join("") + `</ul>`;
+        } else {
+            narrativeEl.textContent = narrativeData || "AI analysis pending. Review metrics below.";
+        }
     }
 
     // 3. Animated Charts Grid
     const chartsContainer = document.getElementById("charts-container");
     const chartPlaceholder = document.getElementById("chart-placeholder");
+    const mainGrid = document.getElementById("results-container"); // ✅ GRAB THE GRID
 
-    // Destroy old charts if they exist
-    chartInstances.forEach(c => c.destroy());
-    chartInstances = [];
-    chartsContainer.innerHTML = '';
+    if (chartsContainer) {
+        // Destroy old charts if they exist
+        chartInstances.forEach(c => c.destroy());
+        chartInstances = [];
+        chartsContainer.innerHTML = '';
 
-    if (d.charts && d.charts.length > 0) {
-        chartPlaceholder.style.display = "none";
+        // ✅ SMART LAYOUT: Check if 1 chart or multiple
+        if (d.charts && d.charts.length === 1) {
+            mainGrid.classList.add("single-chart-layout");
+        } else {
+            mainGrid.classList.remove("single-chart-layout");
+        }
 
-        d.charts.forEach((chartData, index) => {
-            // Create box wrapper
-            const box = document.createElement('div');
-            box.className = 'chart-box';
-            
-            // Create title
-            const title = document.createElement('h5');
-            title.textContent = chartData.title || `Chart ${index + 1}`;
-            
-            // Create canvas
-            const canvas = document.createElement('canvas');
-            canvas.id = `chart-${index}`;
-            
-            box.appendChild(title);
-            box.appendChild(canvas);
-            chartsContainer.appendChild(box);
+        if (d.charts && d.charts.length > 0) {
+            chartPlaceholder.style.display = "none";
 
-            // Format datasets based on type
-            const type = chartData.type || 'line';
-            let formattedDatasets = [];
+            d.charts.forEach((chartData, index) => {
+                // Create box wrapper
+                const box = document.createElement('div');
+                box.className = 'chart-box';
+                
+                // Create title
+                const title = document.createElement('h5');
+                title.textContent = chartData.title || `Chart ${index + 1}`;
+                
+                // Create canvas
+                const canvas = document.createElement('canvas');
+                canvas.id = `chart-${index}`;
+                
+                box.appendChild(title);
+                box.appendChild(canvas);
+                chartsContainer.appendChild(box);
 
-            if (type === 'doughnut') {
-                const neonColors = ['#00f3ff', '#bc13fe', '#10b981', '#f59e0b', '#ef4444', '#6366f1', '#ec4899', '#14b8a6'];
-                formattedDatasets = chartData.datasets.map(ds => ({
-                    ...ds,
-                    backgroundColor: ds.data.map((_, i) => neonColors[i % neonColors.length]),
-                    borderColor: '#050810',
-                    borderWidth: 3,
-                    hoverOffset: 10
-                }));
-            } else if (type === 'scatter') {
-                formattedDatasets = chartData.datasets.map(ds => ({
-                    ...ds,
-                    backgroundColor: 'rgba(188, 19, 254, 0.6)', // Purple dots
-                    borderColor: '#bc13fe',
-                    pointRadius: 6,
-                    pointHoverRadius: 9,
-                    showLine: true, // Draws a trend line through the dots
-                    borderWidth: 2,
-                    tension: 0.3
-                }));
-            } else {
-                formattedDatasets = chartData.datasets.map(ds => ({
-                    ...ds,
-                    borderColor: '#00f3ff',
-                    backgroundColor: 'rgba(0, 243, 255, 0.1)',
-                    borderWidth: 3,
-                    pointBackgroundColor: '#bc13fe',
-                    pointBorderColor: '#fff',
-                    pointRadius: 4,
-                    pointHoverRadius: 7,
-                    tension: 0.4,
-                    fill: true
-                }));
-            }
+                // Format datasets based on type
+                const type = chartData.type || 'line';
+                let formattedDatasets = [];
 
-            // Initialize Chart.js
-            const ctx = canvas.getContext('2d');
-            const newChart = new Chart(ctx, {
-                type: type,
-                data: {
-                    labels: chartData.labels,
-                    datasets: formattedDatasets
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    animation: {
-                        duration: 1500,
-                        easing: 'easeInOutQuart'
+                if (type === 'doughnut') {
+                    const neonColors = ['#00f3ff', '#bc13fe', '#10b981', '#f59e0b', '#ef4444', '#6366f1', '#ec4899', '#14b8a6'];
+                    formattedDatasets = chartData.datasets.map(ds => ({
+                        ...ds,
+                        backgroundColor: ds.data.map((_, i) => neonColors[i % neonColors.length]),
+                        borderColor: '#050810',
+                        borderWidth: 3,
+                        hoverOffset: 10
+                    }));
+                } else if (type === 'scatter') {
+                    formattedDatasets = chartData.datasets.map(ds => ({
+                        ...ds,
+                        backgroundColor: 'rgba(188, 19, 254, 0.6)',
+                        borderColor: '#bc13fe',
+                        pointRadius: 6,
+                        pointHoverRadius: 9,
+                        showLine: true,
+                        borderWidth: 2,
+                        tension: 0.3
+                    }));
+                } else {
+                    formattedDatasets = chartData.datasets.map(ds => ({
+                        ...ds,
+                        borderColor: '#00f3ff',
+                        backgroundColor: 'rgba(0, 243, 255, 0.1)',
+                        borderWidth: 3,
+                        pointBackgroundColor: '#bc13fe',
+                        pointBorderColor: '#fff',
+                        pointRadius: 4,
+                        pointHoverRadius: 7,
+                        tension: 0.4,
+                        fill: true
+                    }));
+                }
+
+                // Initialize Chart.js
+                const ctx = canvas.getContext('2d');
+                const newChart = new Chart(ctx, {
+                    type: type,
+                    data: {
+                        labels: chartData.labels,
+                        datasets: formattedDatasets
                     },
-                    scales: type === 'doughnut' ? {} : {
-                        x: {
-                            ticks: { color: '#94a3b8', font: { size: 10 } },
-                            grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: {
+                            duration: 1500,
+                            easing: 'easeInOutQuart'
                         },
-                        y: {
-                            ticks: { color: '#94a3b8', font: { size: 10 } },
-                            grid: { color: 'rgba(255, 255, 255, 0.05)' }
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            display: type === 'doughnut' || type === 'scatter',
-                            labels: { color: '#e2e8f0', font: { size: 11 } }
+                        scales: type === 'doughnut' ? {} : {
+                            x: {
+                                ticks: { color: '#94a3b8', font: { size: 10 } },
+                                grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                            },
+                            y: {
+                                ticks: { color: '#94a3b8', font: { size: 10 } },
+                                grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                            }
                         },
-                        tooltip: {
-                            backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                            titleColor: '#00f3ff',
-                            bodyColor: '#e2e8f0',
-                            borderColor: 'rgba(255,255,255,0.1)',
-                            borderWidth: 1,
+                        plugins: {
+                            legend: {
+                                display: type === 'doughnut' || type === 'scatter',
+                                labels: { color: '#e2e8f0', font: { size: 11 } }
+                            },
+                            tooltip: {
+                                backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                                titleColor: '#00f3ff',
+                                bodyColor: '#e2e8f0',
+                                borderColor: 'rgba(255,255,255,0.1)',
+                                borderWidth: 1,
+                            }
                         }
                     }
-                }
+                });
+                
+                chartInstances.push(newChart);
             });
-            
-            chartInstances.push(newChart);
-        });
-    } else {
-        chartPlaceholder.style.display = "block";
+        } else {
+            chartPlaceholder.style.display = "block";
+        }
     }
 
     // 4. Correlations Table
     const tbody = document.querySelector("#signals-table tbody");
     const pairs = d.correlations?.pairs || [];
-    if (pairs.length > 0) {
-        tbody.innerHTML = pairs.slice(0, 6).map(c => `
-            <tr>
-                <td><strong>${c.pair}</strong></td>
-                <td>${c.pearson}</td>
-                <td><span class="badge ${getStrengthClass(c.strength)}">${c.strength}</span></td>
-                <td>${c.significance}</td>
-            </tr>
-        `).join("");
-    } else {
-        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-dim)">No significant correlations detected.</td></tr>`;
+    if (tbody) {
+        if (pairs.length > 0) {
+            tbody.innerHTML = pairs.slice(0, 6).map(c => `
+                <tr>
+                    <td><strong>${c.pair}</strong></td>
+                    <td>${c.pearson}</td>
+                    <td><span class="badge ${getStrengthClass(c.strength)}">${c.strength}</span></td>
+                    <td>${c.significance}</td>
+                </tr>
+            `).join("");
+        } else {
+            tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-dim)">No significant correlations detected.</td></tr>`;
+        }
     }
 
     // 5. Recommendations
     const recsList = document.getElementById("recommendations-list");
     const recs = d.recommendations?.recommendations || [];
-    if (recs.length > 0) {
-        recsList.innerHTML = recs.map(r => `
-            <div class="rec-item">
-                <span class="badge ${r.priority.toLowerCase()}">${r.priority}</span>
-                <strong>${r.action}</strong>
-                <div class="reason">${r.reason}</div>
-            </div>
-        `).join("");
-    } else {
-        recsList.innerHTML = `<p class="placeholder-text">No recommendations generated.</p>`;
+    if (recsList) {
+        if (recs.length > 0) {
+            recsList.innerHTML = recs.map(r => `
+                <div class="rec-item">
+                    <span class="badge ${r.priority.toLowerCase()}">${r.priority}</span>
+                    <strong>${r.action}</strong>
+                    <div class="reason">${r.reason}</div>
+                </div>
+            `).join("");
+        } else {
+            recsList.innerHTML = `<p class="placeholder-text">No recommendations generated.</p>`;
+        }
     }
-}
-
+} // ✅✅✅ THE MISSING BRACKET WAS HERE!
 
 function getStrengthClass(strength) {
     if (["strong", "very strong"].includes(strength)) return "high";
     if (strength === "moderate") return "medium";
     return "low";
+}
+
+// ─────────────────────────────────────────────
+// ANIMATED COUNTERS
+// ─────────────────────────────────────────────
+function animateValue(element, start, end, duration, suffix = '') {
+    let startTimestamp = null;
+    const step = (timestamp) => {
+        if (!startTimestamp) startTimestamp = timestamp;
+        const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+        const current = Math.floor(progress * (end - start) + start);
+        element.textContent = current + suffix;
+        if (progress < 1) {
+            window.requestAnimationFrame(step);
+        }
+    };
+    window.requestAnimationFrame(step);
 }
 
 // ─────────────────────────────────────────────
@@ -313,17 +347,3 @@ document.addEventListener("DOMContentLoaded", () => {
     
     fileInput.addEventListener("change", () => handleFileSelected(fileInput.files));
 });
-
-function animateValue(element, start, end, duration, suffix = '') {
-    let startTimestamp = null;
-    const step = (timestamp) => {
-        if (!startTimestamp) startTimestamp = timestamp;
-        const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-        const current = Math.floor(progress * (end - start) + start);
-        element.textContent = current + suffix;
-        if (progress < 1) {
-            window.requestAnimationFrame(step);
-        }
-    };
-    window.requestAnimationFrame(step);
-}

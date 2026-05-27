@@ -30,23 +30,23 @@
                 <p>Drag & Drop CSV or click to scan deep space</p>
                 <input type="file" id="fileInput" hidden accept=".csv">
                 <div class="upload-actions">
-                    <button class="btn-secondary" id="selectBtn"
-                        onclick="document.getElementById('fileInput').click()">Select File</button>
+                    <button class="btn-secondary" id="selectBtn" onclick="document.getElementById('fileInput').click()">Select
+                        File</button>
                     <button class="btn-primary hidden" id="uploadBtn" onclick="uploadFile()">🚀 Launch Analysis</button>
                 </div>
                 <p id="file-name-display" class="file-name"></p>
             </div>
         </section>
-
+        
         <!-- LOADER -->
         <div class="loader hidden" id="loader">
             <div class="spinner"></div>
             <p>Processing 24-layer pipeline & AI synthesis...</p>
         </div>
-
+        
         <!-- ERROR TOAST -->
         <div class="error-toast" id="errorToast">⚠️ Analysis failed.</div>
-
+        
         <!-- 2. SYSTEM DIAGNOSTICS -->
         <div class="diagnostics-grid hidden" id="stats-grid">
             <div class="stat-card glass-card">
@@ -69,9 +69,9 @@
                 </div>
             </div>
         </div>
-
+        
         <div class="main-grid hidden" id="results-container">
-            <!-- 3. AI NARRATIVE -->
+            <!-- ROW 1: AI NARRATIVE (Full Width) -->
             <section class="ai-section glass-card">
                 <div class="card-header">
                     <span class="icon">✨</span>
@@ -81,17 +81,17 @@
                     <p id="ai-narrative" class="typewriter">Initiating AI scan...</p>
                 </div>
             </section>
-
-            <!-- 4. DATA VISUALIZATION -->
+        
+            <!-- ROW 2: CHARTS (Full Width, Massive) -->
             <section class="chart-section glass-card">
                 <div class="card-header">
-                    <h4>📈 Signal Distribution</h4>
+                    <h4>📈 Signal Visualizations</h4>
                 </div>
-                <div id="charts-container" class="charts-grid"></div>
+                <div id="charts-container" class="charts-grid"></div> <!-- ✅ CRITICAL FOR CHARTS -->
                 <p id="chart-placeholder" class="placeholder-text">Charts will render after analysis</p>
             </section>
-
-            <!-- 5. INSIGHTS & RECS -->
+        
+            <!-- ROW 3: LEFT = Directives -->
             <section class="insights-section glass-card">
                 <div class="card-header">
                     <h4>🎯 Strategic Directives</h4>
@@ -100,8 +100,8 @@
                     <p class="placeholder-text">Awaiting directives...</p>
                 </div>
             </section>
-
-            <!-- 6. CORRELATIONS -->
+        
+            <!-- ROW 3: RIGHT = Signal Pairs -->
             <section class="signals-section glass-card">
                 <div class="card-header">
                     <h4>🔗 Top Signal Pairs</h4>

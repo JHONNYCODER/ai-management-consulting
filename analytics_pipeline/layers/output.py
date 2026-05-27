@@ -20,37 +20,65 @@ def align_contradictions(state):
     # Logic preserved for future implementation
     return state 
 
+# This generates Narratives
 def generate_recommendations(state):
     config = state["config"]
     exec_s = state.get("executive_synthesis", {}) or {}
     taxonomy = state.get("signal_taxonomy", {}) or {}
+    correlations = state.get("correlations", {}).get("pairs", [])
     recs = []
     sys_conf = float(exec_s.get("confidence", 0.3))
     
+    # 1. Try generating from key drivers
     for dm in exec_s.get("key_drivers_meta", []):
         if not isinstance(dm, dict): continue
         bundle = dm.get("signal_strength_bundle", {})
-        vars_list = dm.get("variables", []) # FIX: Renamed 'vars' to 'vars_list'
+        vars_list = dm.get("variables", [])
         avg = float(bundle.get("avg_strength", 0))
-        if avg < 0.3: continue
+        if avg < 0.2: continue # Lowered threshold to catch more
         
         pri = "high" if avg > 0.6 else "medium"
-        tags = set(t for v in vars_list for t in taxonomy.get(v, ["general"]))
-        action_found = False
+        clean_vars = ", ".join(vars_list[:3]) if vars_list else "these factors"
         
-        # Define priority order for recommendations
+        tags = set(t for v in vars_list for t in taxonomy.get(v, ["general"]))
         priority_order = ["compensation", "performance", "experience", "satisfaction", "demographic", "education", "attendance"]
         ordered_tags = [t for t in priority_order if t in tags] + [t for t in tags if t not in priority_order]
+        primary_tag = ordered_tags[0] if ordered_tags else "general"
         
-        for tag in ordered_tags:
-            if tag in config.tag_action_map and tag != "general":
-                recs.append({"action": config.tag_action_map[tag]["action"], "reason": f"Cluster '{dm.get('name')}' avg: {avg:.2f}", "priority": pri, "confidence": round(sys_conf, 3), "driver_id": dm.get("driver_id")})
-                action_found = True
-                break
-                
-        if not action_found: 
-            fallback_vars = ", ".join(vars_list[:3]) if vars_list else "this pattern"
-            recs.append({"action": f"Investigate {fallback_vars}", "reason": f"Cluster '{dm.get('name')}' avg: {avg:.2f}", "priority": pri, "confidence": round(sys_conf, 3), "driver_id": dm.get("driver_id")})
+        if primary_tag != "general":
+            action = f"Review your {primary_tag} strategy"
+            reason = f"The data shows that {clean_vars} are strongly connected. Improving your {primary_tag} approach could have a big impact."
+        else:
+            action = f"Take a closer look at {clean_vars}"
+            reason = f"These factors are moving together. Figuring out why could reveal a hidden opportunity."
+            
+        recs.append({"action": action, "reason": reason, "priority": pri, "confidence": round(sys_conf, 3), "driver_id": dm.get("driver_id")})
     
+    # 2. Fallback: If we have less than 3, generate from top correlations!
+    if len(recs) < 3 and correlations:
+        for pair in correlations[:3]:
+            pair_name = pair.get("pair", "")
+            strength = pair.get("strength", "weak")
+            if strength in ["strong", "very strong", "moderate"] and " vs " in pair_name:
+                v1, v2 = pair_name.split(" vs ")[0].strip(), pair_name.split(" vs ")[1].strip()
+                recs.append({
+                    "action": f"Analyze the relationship between {v1} and {v2}",
+                    "reason": f"These two metrics have a {strength} correlation. Adjusting one will likely affect the other.",
+                    "priority": "high" if strength in ["strong", "very strong"] else "medium",
+                    "confidence": round(sys_conf, 3),
+                    "driver_id": None
+                })
+            if len(recs) >= 3: break
+
+    # 3. Absolute Fallback (if data is just completely empty)
+    if not recs:
+        recs.append({
+            "action": "Collect more data",
+            "reason": "Current data lacks strong patterns. A larger dataset will help uncover hidden insights.",
+            "priority": "medium",
+            "confidence": round(sys_conf, 3),
+            "driver_id": None
+        })
+
     state["recommendations"] = {"recommendations": recs, "total_recommendations": len(recs), "system_confidence": round(sys_conf, 3)}
     return state
