@@ -65,7 +65,7 @@ def generate_ai_insight(payload: dict) -> str:
                 max_tokens=300,
                 temperature=0.7
             )
-            logger.info("AI insight generated via Groq (70B)")
+            logger.info("AI insight generated via Groq (70B) primary inference pipeline")
             return response.choices[0].message.content
         except Exception as e:
             logger.warning(f"Groq failed, falling back to Ollama: {e}")
@@ -81,7 +81,7 @@ def generate_ai_insight(payload: dict) -> str:
             max_tokens=300,
             temperature=0.7
         )
-        logger.info("AI insight generated via Ollama (7B)")
+        logger.info("AI insight generated via Ollama 7B fallback inference pipeline")
         return response.choices[0].message.content
     except Exception as e:
         logger.error(f"Ollama also failed: {e}")

@@ -1,4 +1,4 @@
-let chartInstance = null;
+let chartInstances = [];
 
 window.uploadFile = async function () {
     const fileInput = document.getElementById("fileInput");
@@ -40,6 +40,12 @@ window.uploadFile = async function () {
         const result = data.data;
         renderDashboard(result);
 
+        // ✅ SMOOTH AUTO-SCROLL
+        document.getElementById("stats-grid").scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        // UI Success State
+        statsGrid.classList.remove("hidden");
+
         // UI Success State
         statsGrid.classList.remove("hidden");
         resultsContainer.classList.remove("hidden");
@@ -68,19 +74,36 @@ window.uploadFile = async function () {
 function renderDashboard(d) {
     // 1. System Diagnostics
     const healthScore = d.dataset_health?.health_score ?? 0;
-    document.getElementById("health-val").textContent = healthScore;
+    const healthEl = document.getElementById("health-val");
+    animateValue(healthEl, 0, healthScore, 1200);
+    
+    // ✅ DYNAMIC COLOR (Health)
+    if (healthScore >= 75) healthEl.style.color = "#10b981"; // Green
+    else if (healthScore >= 40) healthEl.style.color = "#f59e0b"; // Yellow
+    else healthEl.style.color = "#ef4444"; // Red
+    
     document.getElementById("health-bar").style.width = `${healthScore}%`;
 
     const stabilityIndex = d.analytical_stability?.stability_index ?? 0;
-    document.getElementById("stability-val").textContent = stabilityIndex;
+    animateValue(document.getElementById("stability-val"), 0, stabilityIndex, 1200);
+    
     const stabLabel = d.analytical_stability?.label?.toLowerCase() || "unknown";
     const stabElement = document.getElementById("stability-label");
     stabElement.textContent = stabLabel.toUpperCase();
     stabElement.className = `stability-tag ${stabLabel}`;
 
     const confidence = d.executive_synthesis?.confidence ?? 0;
-    document.getElementById("confidence-val").textContent = `${(confidence * 100).toFixed(1)}%`;
-    document.getElementById("confidence-bar").style.width = `${confidence * 100}%`;
+    const confPercent = (confidence * 100).toFixed(1);
+    const confEl = document.getElementById("confidence-val");
+    animateValue(confEl, 0, parseFloat(confPercent), 1200, '%');
+    
+    // ✅ DYNAMIC COLOR (Confidence)
+    const confNum = parseFloat(confPercent);
+    if (confNum >= 70) confEl.style.color = "#10b981"; // Green
+    else if (confNum >= 40) confEl.style.color = "#f59e0b"; // Yellow
+    else confEl.style.color = "#ef4444"; // Red
+    
+    document.getElementById("confidence-bar").style.width = `${confPercent}%`;
 
     // 2. AI Narrative
     const narrativeEl = document.getElementById("ai-narrative");
@@ -98,85 +121,118 @@ function renderDashboard(d) {
         narrativeEl.textContent = narrativeData || "AI analysis pending. Review metrics below.";
     }
 
-    // 3. Animated Chart
-    const chartCanvas = document.getElementById("analysis-chart");
+    // 3. Animated Charts Grid
+    const chartsContainer = document.getElementById("charts-container");
     const chartPlaceholder = document.getElementById("chart-placeholder");
 
-    if (d.chart_data && d.chart_data.labels && d.chart_data.datasets) {
+    // Destroy old charts if they exist
+    chartInstances.forEach(c => c.destroy());
+    chartInstances = [];
+    chartsContainer.innerHTML = '';
+
+    if (d.charts && d.charts.length > 0) {
         chartPlaceholder.style.display = "none";
-        chartCanvas.style.display = "block";
 
-        if (chartInstance) chartInstance.destroy();
+        d.charts.forEach((chartData, index) => {
+            // Create box wrapper
+            const box = document.createElement('div');
+            box.className = 'chart-box';
+            
+            // Create title
+            const title = document.createElement('h5');
+            title.textContent = chartData.title || `Chart ${index + 1}`;
+            
+            // Create canvas
+            const canvas = document.createElement('canvas');
+            canvas.id = `chart-${index}`;
+            
+            box.appendChild(title);
+            box.appendChild(canvas);
+            chartsContainer.appendChild(box);
 
-        const ctx = chartCanvas.getContext('2d');
-        const chartType = d.chart_data.type || 'line';
-        let formattedDatasets = [];
-        
-        if (chartType === 'doughnut') {
-            const neonColors = ['#00f3ff', '#bc13fe', '#10b981', '#f59e0b', '#ef4444', '#6366f1', '#ec4899', '#14b8a6'];
-            formattedDatasets = d.chart_data.datasets.map(ds => ({
-                ...ds,
-                backgroundColor: ds.data.map((_, i) => neonColors[i % neonColors.length]),
-                borderColor: '#050810',
-                borderWidth: 3,
-                hoverOffset: 15
-            }));
-        } else {
-            formattedDatasets = d.chart_data.datasets.map(ds => ({
-                ...ds,
-                borderColor: '#00f3ff',
-                backgroundColor: 'rgba(0, 243, 255, 0.1)',
-                borderWidth: 3,
-                pointBackgroundColor: '#bc13fe',
-                pointBorderColor: '#fff',
-                pointRadius: 5,
-                pointHoverRadius: 8,
-                tension: 0.4,
-                fill: true
-            }));
-        }
+            // Format datasets based on type
+            const type = chartData.type || 'line';
+            let formattedDatasets = [];
 
-        chartInstance = new Chart(ctx, {
-            type: chartType,
-            data: {
-                labels: d.chart_data.labels,
-                datasets: formattedDatasets
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: {
-                    duration: 1500,
-                    easing: 'easeInOutQuart'
+            if (type === 'doughnut') {
+                const neonColors = ['#00f3ff', '#bc13fe', '#10b981', '#f59e0b', '#ef4444', '#6366f1', '#ec4899', '#14b8a6'];
+                formattedDatasets = chartData.datasets.map(ds => ({
+                    ...ds,
+                    backgroundColor: ds.data.map((_, i) => neonColors[i % neonColors.length]),
+                    borderColor: '#050810',
+                    borderWidth: 3,
+                    hoverOffset: 10
+                }));
+            } else if (type === 'scatter') {
+                formattedDatasets = chartData.datasets.map(ds => ({
+                    ...ds,
+                    backgroundColor: 'rgba(188, 19, 254, 0.6)', // Purple dots
+                    borderColor: '#bc13fe',
+                    pointRadius: 6,
+                    pointHoverRadius: 9,
+                    showLine: true, // Draws a trend line through the dots
+                    borderWidth: 2,
+                    tension: 0.3
+                }));
+            } else {
+                formattedDatasets = chartData.datasets.map(ds => ({
+                    ...ds,
+                    borderColor: '#00f3ff',
+                    backgroundColor: 'rgba(0, 243, 255, 0.1)',
+                    borderWidth: 3,
+                    pointBackgroundColor: '#bc13fe',
+                    pointBorderColor: '#fff',
+                    pointRadius: 4,
+                    pointHoverRadius: 7,
+                    tension: 0.4,
+                    fill: true
+                }));
+            }
+
+            // Initialize Chart.js
+            const ctx = canvas.getContext('2d');
+            const newChart = new Chart(ctx, {
+                type: type,
+                data: {
+                    labels: chartData.labels,
+                    datasets: formattedDatasets
                 },
-                scales: chartType === 'doughnut' ? {} : {
-                    x: {
-                        ticks: { color: '#94a3b8', font: { family: "'Inter', sans-serif" } },
-                        grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        duration: 1500,
+                        easing: 'easeInOutQuart'
                     },
-                    y: {
-                        ticks: { color: '#94a3b8', font: { family: "'Inter', sans-serif" } },
-                        grid: { color: 'rgba(255, 255, 255, 0.05)' }
-                    }
-                },
-                plugins: {
-                    legend: {
-                        display: chartType === 'doughnut',
-                        labels: { color: '#e2e8f0', font: { family: "'JetBrains Mono', monospace" } }
+                    scales: type === 'doughnut' ? {} : {
+                        x: {
+                            ticks: { color: '#94a3b8', font: { size: 10 } },
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                        },
+                        y: {
+                            ticks: { color: '#94a3b8', font: { size: 10 } },
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                        }
                     },
-                    tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                        titleColor: '#00f3ff',
-                        bodyColor: '#e2e8f0',
-                        borderColor: 'rgba(255,255,255,0.1)',
-                        borderWidth: 1,
-                        padding: 10
+                    plugins: {
+                        legend: {
+                            display: type === 'doughnut' || type === 'scatter',
+                            labels: { color: '#e2e8f0', font: { size: 11 } }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                            titleColor: '#00f3ff',
+                            bodyColor: '#e2e8f0',
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            borderWidth: 1,
+                        }
                     }
                 }
-            }
+            });
+            
+            chartInstances.push(newChart);
         });
     } else {
-        chartCanvas.style.display = "none";
         chartPlaceholder.style.display = "block";
     }
 
@@ -211,6 +267,7 @@ function renderDashboard(d) {
         recsList.innerHTML = `<p class="placeholder-text">No recommendations generated.</p>`;
     }
 }
+
 
 function getStrengthClass(strength) {
     if (["strong", "very strong"].includes(strength)) return "high";
@@ -256,3 +313,17 @@ document.addEventListener("DOMContentLoaded", () => {
     
     fileInput.addEventListener("change", () => handleFileSelected(fileInput.files));
 });
+
+function animateValue(element, start, end, duration, suffix = '') {
+    let startTimestamp = null;
+    const step = (timestamp) => {
+        if (!startTimestamp) startTimestamp = timestamp;
+        const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+        const current = Math.floor(progress * (end - start) + start);
+        element.textContent = current + suffix;
+        if (progress < 1) {
+            window.requestAnimationFrame(step);
+        }
+    };
+    window.requestAnimationFrame(step);
+}

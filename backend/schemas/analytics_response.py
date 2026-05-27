@@ -57,7 +57,7 @@ class AnalyticsResponseData(BaseModel):
     recommendations: Dict[str, Any]
     chart_url: Optional[str]
     chart_path: Optional[str]
-    chart_data: Optional[Dict[str, Any]] = None
+    charts: Optional[List[Dict[str, Any]]] = None
 
 class AnalyticsResponse(BaseModel):
     status: str

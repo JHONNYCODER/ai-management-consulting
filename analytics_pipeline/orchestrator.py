@@ -1,7 +1,9 @@
 import time
 import traceback
+import optparse
 import pandas as pd
 import numpy as np
+import os
 
 from dataclasses import dataclass
 from typing import Dict, List
@@ -19,7 +21,7 @@ from .logger import logger
 
 from .layers.raw_computation import (
     generate_profile,
-    generate_chart,
+    generate_charts,
     generate_correlation_analysis,
     generate_dataset_health,
     detect_anomalies,
@@ -123,7 +125,7 @@ def execute_pipeline_layer(state: Dict, layer_def: Dict, config: PipelineConfig)
         duration = round((time.time() - start_time) * 1000, 2)
         
         state["layer_execution_trace"][name] = {"status": "success", "duration_ms": duration, "input_size": input_size}
-        logger.info(f"Layer {name} completed", extra={"layer": name, "duration_ms": duration})
+        logger.debug(f"Layer {name} completed", extra={"layer": name, "duration_ms": duration}) 
         return state
     except PipelineError as e:
         duration = round((time.time() - start_time) * 1000, 2)
@@ -145,14 +147,14 @@ def run_pipeline(file_path: str, config: PipelineConfig = None) -> PipelineExecu
     df = pd.read_csv(file_path)
     state = create_initial_state(df=df, file_path=file_path, config=config)
     
+    # ✅ PIPELINE START SEPARATOR
+    logger.info("=" * 60, extra={"layer": "pipeline"})
+    logger.info(f"Pipeline run initiated: {os.path.basename(file_path)}", extra={"layer": "pipeline"})
+    
     start_time = time.time()
     executed, failed = [], []
     
     state["output_dir"] = config.output_dir or "uploads"
-    # Chart generation is handled outside the strict registry due to dynamic column selection
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    chart_col = numeric_cols[0] if numeric_cols else None
-    if chart_col: state = generate_chart(state, chart_col)
     
     for layer_def in PIPELINE_REGISTRY:
         try:
@@ -162,9 +164,31 @@ def run_pipeline(file_path: str, config: PipelineConfig = None) -> PipelineExecu
             failed.append({"layer": e.layer, "error": e.root_cause})
             if config.execution_mode == "fail_fast": break
             
+    # ✅ Generate charts AFTER pipeline runs (needs correlations & profiles)
+    state = generate_charts(state)
+
+    # ✅ CALCULATE DURATION FIRST
     duration_ms = round((time.time() - start_time) * 1000, 2)
-    state["metadata"] = {"pipeline_version": "2.0.0", "execution_duration_ms": duration_ms, "layers_executed": executed, "layers_failed": failed}
+    state["metadata"] = {
+        "pipeline_version": "2.0.0", 
+        "execution_duration_ms": duration_ms, 
+        "layers_executed": executed, 
+        "layers_failed": failed
+    }
+    
+    # ✅ PIPELINE END SEPARATOR (Now duration_ms is safely defined)
+    status = "SUCCESS" if len(failed) == 0 else "PARTIAL_SUCCESS"
+    logger.info(
+        f"Pipeline run completed: {status} in {duration_ms}ms", 
+        extra={"layer": "pipeline", "duration_ms": duration_ms}
+    )
+    logger.info("=" * 60, extra={"layer": "pipeline"})
     
     return PipelineExecutionResult(
-        state=state, success=len(failed) == 0, layers_executed=executed, layers_failed=failed, execution_duration_ms=duration_ms, diagnostics=state.get("diagnostics", {})
+        state=state, 
+        success=len(failed) == 0, 
+        layers_executed=executed, 
+        layers_failed=failed, 
+        execution_duration_ms=duration_ms, 
+        diagnostics=state.get("diagnostics", {})
     )

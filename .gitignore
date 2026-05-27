@@ -14,3 +14,6 @@ Thumbs.db      # Windows junk
 
 # Pytest cache
 .pytest_cache/
+
+# Logs
+backend/logs/

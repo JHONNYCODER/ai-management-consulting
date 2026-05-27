@@ -36,49 +36,66 @@ def generate_profile(state):
     state["profile"] = profile
     return state
 
-def generate_chart(state, column):
+def generate_charts(state):
     df = state.get("df")
-    
-    # Clear old static image data
+    state["charts"] = [] # Replace single chart with an array of charts
     state["chart_file"] = None
     state["chart_url"] = None
-    state["chart_data"] = None
 
-    if df is None or column not in df.columns:
+    if df is None:
         return state
 
     try:
-        series = df[column].dropna()
-        
-        # LOGIC: Pick chart type based on the data
-        if pd.api.types.is_numeric_dtype(series) and series.nunique() > 10:
-            # CONTINUOUS DATA (e.g., ages, prices) -> Smooth Glowing Area Chart
-            counts, bin_edges = np.histogram(series, bins=15)
-            labels = [f"{bin_edges[i]:.0f}-{bin_edges[i+1]:.0f}" for i in range(len(counts))]
-            data = counts.tolist()
-            chart_type = "line"
-        else:
-            # CATEGORICAL DATA (e.g., categories, countries) -> Neon Doughnut Chart
-            counts = series.value_counts().head(8) # Top 8 so it doesn't get cluttered
-            labels = counts.index.astype(str).tolist()
-            data = counts.values.tolist()
-            chart_type = "doughnut"
+        # ── CHART 1: Numeric Distribution (Area Chart) ──
+        numeric_cols = [c for c in df.select_dtypes(include=[np.number]).columns if not is_identifier_column(c, df[c])]
+        if numeric_cols:
+            col = numeric_cols[0]
+            series = df[col].dropna()
+            if len(series) > 0 and series.nunique() > 1:
+                counts, bin_edges = np.histogram(series, bins=15)
+                labels = [f"{bin_edges[i]:.0f}-{bin_edges[i+1]:.0f}" for i in range(len(counts))]
+                state["charts"].append({
+                    "title": f"{col} Distribution",
+                    "type": "line",
+                    "labels": labels,
+                    "datasets": [{"label": col, "data": counts.tolist()}]
+                })
 
-        # Save the raw data structure for the frontend
-        state["chart_data"] = {
-            "type": chart_type,
-            "labels": labels,
-            "datasets": [{
-                "label": f"{column} Distribution",
-                "data": data
-            }]
-        }
-        
+        # ── CHART 2: Categorical Breakdown (Doughnut) ──
+        cat_cols = df.select_dtypes(include=['object', 'category']).columns
+        if len(cat_cols) > 0:
+            col = cat_cols[0]
+            series = df[col].dropna()
+            if len(series) > 0:
+                counts = series.value_counts().head(6) # Top 6 slices
+                state["charts"].append({
+                    "title": f"{col} Breakdown",
+                    "type": "doughnut",
+                    "labels": counts.index.astype(str).tolist(),
+                    "datasets": [{"label": col, "data": counts.values.tolist()}]
+                })
+
+        # ── CHART 3: Top Correlation (Scatter Plot) ──
+        pairs = (state.get("correlations") or {}).get("pairs", [])
+        strong_pairs = [p for p in pairs if abs(p.get("pearson", 0)) > 0.3]
+        if strong_pairs:
+            top_pair = strong_pairs[0]
+            pair_names = top_pair["pair"].split(" vs ")
+            if len(pair_names) == 2:
+                c1, c2 = pair_names[0].strip(), pair_names[1].strip()
+                if c1 in df.columns and c2 in df.columns:
+                    sample_df = df[[c1, c2]].dropna().sample(n=min(50, len(df)), random_state=42)
+                    state["charts"].append({
+                        "title": f"{c1} vs {c2}",
+                        "type": "scatter",
+                        "labels": [],
+                        "datasets": [{
+                            "label": f"r={top_pair.get('pearson', 0)}",
+                            "data": [{ "x": float(row[c1]), "y": float(row[c2]) } for _, row in sample_df.iterrows()]
+                        }]
+                    })
     except Exception as e:
-        logger.error(
-            "Chart generation failed",
-            extra={"layer": "chart", "exception": str(e)}
-        )
+        logger.error(f"Chart generation failed: {e}", extra={"layer": "chart"})
 
     return state
 

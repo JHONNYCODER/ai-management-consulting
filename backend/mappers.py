@@ -148,7 +148,7 @@ def map_state_to_api_response(state: Dict) -> AnalyticsResponse:
         recommendations=clean_recs,
         chart_url=safe_get(state, "chart_url"),
         chart_path=safe_get(state, "chart_file"),
-        chart_data=safe_get(state, "chart_data")
+        charts=safe_get(state, "charts")
     )
     
     # 12. Wrap in top-level response

@@ -456,3 +456,35 @@ td {
         grid-template-columns: 1fr;
     }
 }
+
+/* Multi-Chart Grid */
+.charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+
+.chart-box {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
+    padding: 1rem;
+    height: 280px;
+    /* Fixed height for clean grid */
+    display: flex;
+    flex-direction: column;
+}
+
+.chart-box h5 {
+    margin-bottom: 0.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--cyan);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.chart-box canvas {
+    flex-grow: 1;
+    min-height: 0;
+    /* Prevents canvas from overflowing grid */
+}
