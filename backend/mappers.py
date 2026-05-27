@@ -129,6 +129,7 @@ def map_state_to_api_response(state: Dict) -> AnalyticsResponse:
     
     # 11. Build final data object
     file_name = os.path.basename(safe_get(state, "file_path", "unknown.csv"))
+
     
     data = AnalyticsResponseData(
         file_name=file_name,
@@ -146,7 +147,8 @@ def map_state_to_api_response(state: Dict) -> AnalyticsResponse:
         executive_synthesis=executive_synthesis,
         recommendations=clean_recs,
         chart_url=safe_get(state, "chart_url"),
-        chart_path=safe_get(state, "chart_file")
+        chart_path=safe_get(state, "chart_file"),
+        chart_data=safe_get(state, "chart_data")
     )
     
     # 12. Wrap in top-level response

@@ -7,7 +7,6 @@ import itertools
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 
 from scipy.stats import pearsonr
 
@@ -38,30 +37,42 @@ def generate_profile(state):
     return state
 
 def generate_chart(state, column):
-    df, file_path = state.get("df"), state.get("file_path")
+    df = state.get("df")
+    
+    # Clear old static image data
     state["chart_file"] = None
+    state["chart_url"] = None
+    state["chart_data"] = None
 
     if df is None or column not in df.columns:
         return state
 
     try:
-        file_name = os.path.basename(file_path or "data.csv").replace(".csv", f"_{column}_chart.png")
-        output_dir = state.get("output_dir")
-        if not output_dir:
-            raise ValueError("output_dir not set in pipeline state")
+        series = df[column].dropna()
+        
+        # LOGIC: Pick chart type based on the data
+        if pd.api.types.is_numeric_dtype(series) and series.nunique() > 10:
+            # CONTINUOUS DATA (e.g., ages, prices) -> Smooth Glowing Area Chart
+            counts, bin_edges = np.histogram(series, bins=15)
+            labels = [f"{bin_edges[i]:.0f}-{bin_edges[i+1]:.0f}" for i in range(len(counts))]
+            data = counts.tolist()
+            chart_type = "line"
+        else:
+            # CATEGORICAL DATA (e.g., categories, countries) -> Neon Doughnut Chart
+            counts = series.value_counts().head(8) # Top 8 so it doesn't get cluttered
+            labels = counts.index.astype(str).tolist()
+            data = counts.values.tolist()
+            chart_type = "doughnut"
 
-        os.makedirs(output_dir, exist_ok=True)
-
-        plt.figure()
-        df[column].dropna().hist()
-        plt.title(f"{column} Distribution")
-
-        output_path = os.path.join(output_dir, file_name)
-        plt.savefig(output_path)
-        plt.close() # FIX: Removed duplicate savefig/close calls
-
-        state["chart_file"] = file_name
-        state["chart_url"] = f"/charts/{file_name}" 
+        # Save the raw data structure for the frontend
+        state["chart_data"] = {
+            "type": chart_type,
+            "labels": labels,
+            "datasets": [{
+                "label": f"{column} Distribution",
+                "data": data
+            }]
+        }
         
     except Exception as e:
         logger.error(

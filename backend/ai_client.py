@@ -34,31 +34,30 @@ ollama_client = OpenAI(
 # ─────────────────────────────────────────────
 
 def generate_ai_insight(payload: dict) -> str:
-    """
-    Generates a consulting narrative using Groq (70B), 
-    falls back to Ollama (14B) if Groq fails.
-    """
-    system_prompt = payload.get("system_prompt", "You are an expert management consultant.")
+    system_prompt = "You are a business analyst presenting to a non-technical CEO. Ban the following words: 'structural themes', 'reliability decision frame', 'drivers', 'signals', 'moderate'. Use plain English only."
     context = payload.get("context", {})
     recommendations = payload.get("recommendations", {})
     
-    # Convert dicts to clean JSON strings so the LLM can read them easily
     context_str = json.dumps(context, indent=2)
     recs_str = json.dumps(recommendations, indent=2)
     
     user_message = (
         f"Here is the analytical context from a dataset:\n{context_str}\n\n"
         f"Here are the initial data-driven recommendations:\n{recs_str}\n\n"
-        "Based on this, write a concise, professional executive summary (3-4 sentences). "
-        "Highlight the key drivers, acknowledge any risks or data quality issues, "
-        "and suggest clear next steps for management."
+        "CRITICAL INSTRUCTIONS:\n"
+        "1. Return ONLY a valid JSON array of exactly 3 objects. No markdown formatting, no extra text, just the raw JSON array.\n"
+        "2. Each object must have exactly two keys:\n"
+        "   - 'analysis': A simple, jargon-free sentence explaining what the data shows right now.\n"
+        "   - 'suggestion': A clear, actionable step on what to do next based on the analysis.\n"
+        "Example format:\n"
+        '[{"analysis": "Sales dropped 10% last month.", "suggestion": "Renew the expired ad campaign immediately."}]'
     )
 
     # --- ATTEMPT 1: GROQ (70B Brain) ---
     if groq_client:
         try:
             response = groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile", # Groq's free 70B model
+                model="llama-3.3-70b-versatile",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message}
@@ -82,8 +81,8 @@ def generate_ai_insight(payload: dict) -> str:
             max_tokens=300,
             temperature=0.7
         )
-        logger.info("AI insight generated via Ollama (14B)")
+        logger.info("AI insight generated via Ollama (7B)")
         return response.choices[0].message.content
     except Exception as e:
         logger.error(f"Ollama also failed: {e}")
-        return "AI analysis unavailable at this time. Please review the data metrics below."
+        return "[]"

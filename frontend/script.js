@@ -1,3 +1,5 @@
+let chartInstance = null;
+
 window.uploadFile = async function () {
     const fileInput = document.getElementById("fileInput");
     const uploadBtn = document.getElementById("uploadBtn");
@@ -81,18 +83,100 @@ function renderDashboard(d) {
     document.getElementById("confidence-bar").style.width = `${confidence * 100}%`;
 
     // 2. AI Narrative
-    document.getElementById("ai-narrative").textContent = 
-        d.narrative_summary?.full_narrative || "AI analysis pending. Review metrics below.";
-
-    // 3. Chart
-    const chartImg = document.getElementById("analysis-chart");
-    const chartPlaceholder = document.getElementById("chart-placeholder");
-    if (d.chart_url) {
-        chartImg.src = `http://127.0.0.1:8000${d.chart_url}?t=${Date.now()}`;
-        chartImg.style.display = "block";
-        chartPlaceholder.style.display = "none";
+    const narrativeEl = document.getElementById("ai-narrative");
+    const narrativeData = d.narrative_summary?.full_narrative || "";
+    
+    if (Array.isArray(narrativeData)) {
+        narrativeEl.innerHTML = `<ul class="ai-points-list">` + 
+            narrativeData.map(p => `
+                <li class="ai-point-item">
+                    <div class="ai-analysis-text">📊 ${p.analysis || ''}</div>
+                    <div class="ai-suggestion-text">${p.suggestion || ''}</div>
+                </li>
+            `).join("") + `</ul>`;
     } else {
-        chartImg.style.display = "none";
+        narrativeEl.textContent = narrativeData || "AI analysis pending. Review metrics below.";
+    }
+
+    // 3. Animated Chart
+    const chartCanvas = document.getElementById("analysis-chart");
+    const chartPlaceholder = document.getElementById("chart-placeholder");
+
+    if (d.chart_data && d.chart_data.labels && d.chart_data.datasets) {
+        chartPlaceholder.style.display = "none";
+        chartCanvas.style.display = "block";
+
+        if (chartInstance) chartInstance.destroy();
+
+        const ctx = chartCanvas.getContext('2d');
+        const chartType = d.chart_data.type || 'line';
+        let formattedDatasets = [];
+        
+        if (chartType === 'doughnut') {
+            const neonColors = ['#00f3ff', '#bc13fe', '#10b981', '#f59e0b', '#ef4444', '#6366f1', '#ec4899', '#14b8a6'];
+            formattedDatasets = d.chart_data.datasets.map(ds => ({
+                ...ds,
+                backgroundColor: ds.data.map((_, i) => neonColors[i % neonColors.length]),
+                borderColor: '#050810',
+                borderWidth: 3,
+                hoverOffset: 15
+            }));
+        } else {
+            formattedDatasets = d.chart_data.datasets.map(ds => ({
+                ...ds,
+                borderColor: '#00f3ff',
+                backgroundColor: 'rgba(0, 243, 255, 0.1)',
+                borderWidth: 3,
+                pointBackgroundColor: '#bc13fe',
+                pointBorderColor: '#fff',
+                pointRadius: 5,
+                pointHoverRadius: 8,
+                tension: 0.4,
+                fill: true
+            }));
+        }
+
+        chartInstance = new Chart(ctx, {
+            type: chartType,
+            data: {
+                labels: d.chart_data.labels,
+                datasets: formattedDatasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 1500,
+                    easing: 'easeInOutQuart'
+                },
+                scales: chartType === 'doughnut' ? {} : {
+                    x: {
+                        ticks: { color: '#94a3b8', font: { family: "'Inter', sans-serif" } },
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                    },
+                    y: {
+                        ticks: { color: '#94a3b8', font: { family: "'Inter', sans-serif" } },
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: chartType === 'doughnut',
+                        labels: { color: '#e2e8f0', font: { family: "'JetBrains Mono', monospace" } }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                        titleColor: '#00f3ff',
+                        bodyColor: '#e2e8f0',
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        borderWidth: 1,
+                        padding: 10
+                    }
+                }
+            }
+        });
+    } else {
+        chartCanvas.style.display = "none";
         chartPlaceholder.style.display = "block";
     }
 

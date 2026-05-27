@@ -13,7 +13,7 @@
 
 <body class="space-theme">
     <!-- Interactive Constellation Background -->
-     
+
     <nav class="glass-nav">
         <div class="logo">STELLAR<span>ANALYTICS</span></div>
         <div class="status-indicator">
@@ -88,7 +88,7 @@
                     <h4>📈 Signal Distribution</h4>
                 </div>
                 <div class="chart-wrapper">
-                    <img id="analysis-chart" src="" alt="Analytical Chart" style="display:none;">
+                    <canvas id="analysis-chart" style="display:none;"></canvas>
                     <p id="chart-placeholder" class="placeholder-text">Chart will render after analysis</p>
                 </div>
             </section>
@@ -124,6 +124,9 @@
             </section>
         </div>
     </main>
+
+    <!-- Chart.js for Animated Charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
     <!-- Three.js Libraries for Background -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
