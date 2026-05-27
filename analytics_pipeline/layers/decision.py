@@ -11,7 +11,7 @@ def generate_executive_synthesis(state):
     raw = state.get("raw_signals") or []
     
     dom = ct.get("dominant_themes", [])
-    cp = float(ct.get("conflict_pressure", 0)) # Already 0-1 from reasoning layer!
+    cp = float(ct.get("conflict_pressure", 0))
     shs = float(stab.get("system_health_score", 50))
     scs = float(stab.get("signal_confidence_score", 0.5))
     sl = stab.get("label", "unknown")
@@ -33,7 +33,7 @@ def generate_executive_synthesis(state):
         
     risks, opps = [], []
     if shs < 60: risks.append("Low analytical stability")
-    if cp > 0.3: risks.append("Structural overlap between themes")  # noqa: E701
+    if cp > 0.3: risks.append("Structural overlap between themes")
     if not dom: risks.append("No dominant structural themes")
     for t in dom[:3]:
         if isinstance(t, dict):
@@ -55,17 +55,20 @@ def generate_executive_synthesis(state):
     
     ic_n = max(0.0, min(1.0, ic))              
     scs_n = max(0.0, min(1.0, scs))
-    cp_n = max(0.0, min(1.0, cp)) # FIX: Removed / 15.0 so penalty actually works!
+    cp_n = max(0.0, min(1.0, cp)) 
     
     stability = max(0.0, min(1.0, stab.get("stability_index", 60) / 100.0))
     signal_conf = scs_n
-    conflict_penalty = cp_n
 
-    fc = (
-        0.5 * signal_conf +
-        0.3 * stability +
-        0.2 * (1 - conflict_penalty)
-    )
+    # ✅ NEW FAIRER FORMULA: Rewards stability and health heavily
+    fc = (0.35 * signal_conf) + (0.40 * stability) + (0.25 * shs_n)
+
+    # ✅ STRENGTH BOOST: If top correlations are massive, boost confidence!
+    top_pearson = max([abs(float(i.get("pearson", 0))) for i in raw if isinstance(i, dict)], default=0)
+    if top_pearson >= 0.8:
+        fc += 0.10
+    elif top_pearson >= 0.5:
+        fc += 0.05
 
     fc = max(0.05, min(0.99, fc))
 

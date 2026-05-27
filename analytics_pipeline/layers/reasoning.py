@@ -77,10 +77,8 @@ def generate_analytical_stability(state):
     confs = [float(i.get("confidence", 0.5)) for i in raw if isinstance(i, dict)]
     signal_conf = round(sum(confs) / len(confs), 3) if confs else 0.5
     
-    # 3. Dataset Size Bonus (0 to 1) - Recovered from your dead code!
-    # log10(1)=0, log10(10)=1, log10(100)=2, log10(1000)=3. 
-    # Multiplied by 20, capped at 100, then normalized.
-    size_score = min(100.0, math.log10(n + 1) * 20) / 100.0
+    # 3. Dataset Size Score (Fairer curve)
+    size_score = min(1.0, (math.log10(n + 1) / 2.0)) # n=8 -> 0.47, n=100 -> 1.0
     
     # 4. Penalties
     anomaly_penalty = min(1.0, (ac / max(n, 1)))
@@ -91,16 +89,21 @@ def generate_analytical_stability(state):
     )
     conflict_penalty = min(1.0, conflict_score / 15.0)
     
-    # 5. Final Stability Calculation (Merged logic)
-    base_stability = (0.45 * health_norm) + (0.35 * signal_conf) + (0.20 * size_score)
+    # 5. Final Stability Calculation
+    base_stability = (0.40 * health_norm) + (0.30 * signal_conf) + (0.30 * size_score)
     
-    # Apply penalties multiplicatively so they don't push score below 0
-    penalized_stability = base_stability * (1 - 0.25 * conflict_penalty) * (1 - 0.5 * anomaly_penalty)
+    # Apply penalties (reduced harshness)
+    penalized_stability = base_stability * (1 - 0.15 * conflict_penalty) * (1 - 0.3 * anomaly_penalty)
+    
+    # ✅ QUALITY BOOST: If data is clean and signals are strong, boost it!
+    top_pearson = max([abs(float(i.get("pearson", 0))) for i in raw if isinstance(i, dict)], default=0)
+    if health_norm >= 0.9 and top_pearson >= 0.8:
+        penalized_stability += 0.15  # Reward perfect health + strong correlations
     
     stability_index = round(max(0, min(100, penalized_stability * 100)), 1)
 
     state["analytical_stability"] = {
-        "system_health_score": round(health_norm * 100, 1), # Kept consistent
+        "system_health_score": round(health_norm * 100, 1),
         "signal_confidence_score": signal_conf,
         "stability_index": stability_index,
         "label": (
@@ -111,12 +114,9 @@ def generate_analytical_stability(state):
         ),
         "normalization": {
             "health_norm": health_norm,
-            "shs_n": health_norm,
-            "size_score": size_score,         # Now exposing the size score
+            "size_score": size_score,
             "anomaly_penalty": anomaly_penalty,
-            "ac_n": anomaly_penalty,
-            "conflict_penalty": conflict_penalty,
-            "cp_n": conflict_penalty
+            "conflict_penalty": conflict_penalty
         },
         "summary": f"stability={stability_index}"
     }
