@@ -2,3 +2,15 @@ __pycache__/
 *.pyc
 uploads/
 .env
+
+# Virtual Environment (so you don't upload 10,000 library files)
+venv/
+env/
+.venv/
+
+# OS Junk Files
+.DS_Store      # Mac junk
+Thumbs.db      # Windows junk
+
+# Pytest cache
+.pytest_cache/
