@@ -18,6 +18,15 @@ Results are rendered via animated charts, color-coded diagnostic scores, and cle
 
 ---
 
+# 🚀 AI Management Consulting System
+
+[![Live Website](https://img.shields.io/badge/Live_Demo-Netlify-00C7B7?style=for-the-badge&logo=netlify)](https://ai-management-consulting.netlify.app/)
+[![API Backend](https://img.shields.io/badge/API_Backend-Hugging_Face-FFD21E?style=for-the-badge&logo=huggingface)](https://legendaryaloha-ai-consulting-api.hf.space/)
+
+An enterprise-grade analytics platform that transforms raw CSV data into actionable business intelligence... { Note ⚠ : Please run the API Backend first tehn run the Live Website. }
+
+---
+
 ## 📸 Screenshots
 
 ### Full Dashboard Overview
