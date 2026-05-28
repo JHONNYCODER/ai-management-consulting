@@ -1,5 +1,11 @@
 # 🚀 AI Management Consulting System
 
+
+[![Live Website](https://img.shields.io/badge/Live_Demo-Netlify-00C7B7?style=for-the-badge&logo=netlify)](https://ai-management-consulting.netlify.app/)
+[![API Backend](https://img.shields.io/badge/API_Backend-Hugging_Face-FFD21E?style=for-the-badge&logo=huggingface)](https://legendaryaloha-ai-consulting-api.hf.space/)
+
+> ⚠️ Important: Start the API Backend first, then open the Live Website.
+
 An enterprise-grade analytics platform that transforms raw CSV data into actionable business intelligence. By leveraging a custom 24-layer analytical pipeline and LLM-powered synthesis (Groq / Ollama), the system generates dynamic, interactive dashboards with human-readable strategic directives.
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)
@@ -15,15 +21,6 @@ Traditional data analysis tools require manual querying, static charts, and hour
 A user uploads a CSV dataset through a futuristic, glassmorphic web interface. The backend orchestrates a rigorous 24-layer pipeline—ranging from statistical correlation analysis and anomaly detection to theme extraction and conflict resolution. The refined signals are then passed to a Large Language Model (Groq's Llama 3.3 70B or local Ollama), which generates a clear, two-level executive summary: what the data means and what action to take.
 
 Results are rendered via animated charts, color-coded diagnostic scores, and clean UI components.
-
----
-
-# 🚀 AI Management Consulting System
-
-[![Live Website](https://img.shields.io/badge/Live_Demo-Netlify-00C7B7?style=for-the-badge&logo=netlify)](https://ai-management-consulting.netlify.app/)
-[![API Backend](https://img.shields.io/badge/API_Backend-Hugging_Face-FFD21E?style=for-the-badge&logo=huggingface)](https://legendaryaloha-ai-consulting-api.hf.space/)
-
-An enterprise-grade analytics platform that transforms raw CSV data into actionable business intelligence... { Note ⚠ : Please run the API Backend first tehn run the Live Website. }
 
 ---
 
