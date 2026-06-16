@@ -101,7 +101,7 @@ ai-management-consulting/
 ├── frontend/                 # Client-side application
 │   ├── background.js         # Three.js interactive 3D constellation
 │   ├── index.html            # Main dashboard UI structure
-│   ├── scripts.js            # API calls, DOM rendering, Chart.js logic
+│   ├── script.js            # API calls, DOM rendering, Chart.js logic
 │   └── style.css             # Space theme, glassmorphism, grid layouts
 │
 ├── backend/                  # Server-side application
