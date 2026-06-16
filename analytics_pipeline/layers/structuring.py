@@ -19,7 +19,6 @@ def generate_contextual_synthesis(state):
         pair = item.get("pair", "")
         if " vs " not in pair: continue
         
-        # Added maxsplit=1 in case column names contain " vs "
         try:
             v1, v2 = pair.split(" vs ", 1)
             v1, v2 = v1.strip(), v2.strip()
@@ -36,7 +35,7 @@ def generate_contextual_synthesis(state):
         if var in used: continue
         cluster_vars, signals = {var}, []
         for r in rels:
-            if abs(r.get("value", 0)) >= config.cluster_signal_threshold:
+            if abs(r.get("value", 0) or 0) >= config.cluster_signal_threshold: # handle None value
                 cluster_vars.add(r["related_to"])
                 signals.append(r)
         used.update(cluster_vars)
@@ -45,7 +44,7 @@ def generate_contextual_synthesis(state):
             themes.append({"theme": var, "variables": [var], "supporting_signals": []})
             continue
             
-        conn = {v: sum(abs(r.get("value", 0)) for r in var_map.get(v, []) if abs(r.get("value", 0)) >= config.cluster_signal_threshold) for v in cluster_vars}
+        conn = {v: sum(abs(r.get("value", 0) or 0) for r in var_map.get(v, []) if abs(r.get("value", 0) or 0) >= config.cluster_signal_threshold) for v in cluster_vars}
         v_list = sorted(conn, key=conn.get, reverse=True)
         themes.append({"theme": _derive_theme_name(v_list, taxonomy), "variables": v_list, "supporting_signals": signals})
     
@@ -60,18 +59,22 @@ def generate_contextual_synthesis(state):
 
 
 def generate_theme_metrics(state):
+    config = state["config"]  # FIX: Load config
     themes = (state.get("contextual_synthesis") or {}).get("themes", [])
     bundles, all_str = [], []
     for t in themes:
         sigs = t.get("supporting_signals", [])
-        str_vals = [abs(s.get("value", 0)) for s in sigs if isinstance(s, dict)]
+        str_vals = [abs(s.get("value", 0) or 0) for s in sigs if isinstance(s, dict)] # handle None value
         avg = round(sum(str_vals) / len(str_vals), 3) if str_vals else 0
         bundle = {"avg_strength": avg, "signal_count": len(sigs), "max_strength": round(max(str_vals), 3) if str_vals else 0, "normalized_strength": avg}
         bundles.append({"theme": t.get("theme", ""), "variables": t.get("variables", []), "signal_strength_bundle": bundle})
         all_str.extend(str_vals)
     
     sorted_b = sorted(bundles, key=lambda x: x["signal_strength_bundle"]["avg_strength"], reverse=True)
-    dominant = sorted_b[:3]
+    
+    # FIX: Respect config.max_dominant_themes instead of hardcoding [:3]
+    dominant = sorted_b[:config.max_dominant_themes]
+    
     struct_str = round(sum(t["signal_strength_bundle"]["avg_strength"] for t in dominant) / len(dominant), 3) if dominant else 0
     overall = {"avg_strength": round(sum(all_str) / len(all_str), 3) if all_str else 0, "signal_count": len(all_str), "max_strength": round(max(all_str), 3) if all_str else 0, "normalized_strength": round(sum(all_str) / len(all_str), 3) if all_str else 0}
     
