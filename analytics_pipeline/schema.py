@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from typing import Dict, List
 
 from analytics_pipeline.config import PipelineConfig
-from analytics_pipeline.cache import PipelineCache
 from analytics_pipeline.exceptions import ValidationError
 
 # ─────────────────────────────────────────────
@@ -54,7 +53,6 @@ STATE_SCHEMA = {
     "pipeline_run_id":       {"type": str,                         "required": True},
     "execution_timestamp":   {"type": str,                         "required": True},
     "layer_execution_trace": {"type": dict,                        "required": True},
-    "pipeline_cache":        {"type": PipelineCache,               "required": True},
     "config":                {"type": PipelineConfig,              "required": True},
 }
 
@@ -107,11 +105,11 @@ def create_initial_state(df=None, file_path=None, insights_input=None, config: P
         "rows": len(df) if df is not None else 0,
         "columns": len(df.columns) if df is not None else 0,
         "insights_input": insights_input or {"summary": [], "metrics": []},
-        "output_dir": None, # Added for orchestrator
+        "output_dir": None, 
         "profile": {}, 
         "chart_path": None, 
-        "chart_file": None, # Added for raw_computation
-        "chart_url": None,  # Added for raw_computation
+        "chart_file": None, 
+        "chart_url": None,  
         "correlations": {"pairs": []},
         "dataset_health": {"health_score": 0, "completeness_score": 0.0, "anomaly_count": 0, "dominance_issues": 0},
         "anomaly_details": [], "conflicts": [],
@@ -123,11 +121,10 @@ def create_initial_state(df=None, file_path=None, insights_input=None, config: P
         "cross_theme_reasoning": {}, "executive_synthesis": {}, "recommendations": {},
         "ai_context": {}, "structured_reasoning": {}, "llm_payload": None, "validation": {}, "metadata": {},
         
-        # PART 1 ADDITIONS
         "state_version": "4.0",
         "pipeline_run_id": str(uuid.uuid4()),
         "execution_timestamp": datetime.now(timezone.utc).isoformat(),
         "layer_execution_trace": {},
-        "pipeline_cache": PipelineCache(),
+        # FIX: Removed pipeline_cache (useless per-request memory overhead)
         "config": config
     }
