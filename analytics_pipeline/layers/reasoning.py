@@ -66,9 +66,9 @@ def generate_analytical_stability(state):
     raw = state.get("raw_signals") or []
     conflicts = state.get("conflicts") or []
     
-    hs = float(health.get("health_score", 50))
-    ac = int(health.get("anomaly_count", 0))
-    n = int(state.get("rows", 0))
+    hs = float(health.get("health_score", 50) or 50)  # FIX: Handle None safely
+    ac = int(health.get("anomaly_count", 0) or 0)
+    n = int(state.get("rows", 0) or 0)
     
     # 1. Health Normalization (0 to 1)
     health_norm = max(0, min(100, hs)) / 100.0
@@ -78,7 +78,7 @@ def generate_analytical_stability(state):
     signal_conf = round(sum(confs) / len(confs), 3) if confs else 0.5
     
     # 3. Dataset Size Score (Fairer curve)
-    size_score = min(1.0, (math.log10(n + 1) / 2.0)) # n=8 -> 0.47, n=100 -> 1.0
+    size_score = min(1.0, (math.log10(n + 1) / 2.0)) 
     
     # 4. Penalties
     anomaly_penalty = min(1.0, (ac / max(n, 1)))
@@ -96,9 +96,9 @@ def generate_analytical_stability(state):
     penalized_stability = base_stability * (1 - 0.15 * conflict_penalty) * (1 - 0.3 * anomaly_penalty)
     
     # ✅ QUALITY BOOST: If data is clean and signals are strong, boost it!
-    top_pearson = max([abs(float(i.get("pearson", 0))) for i in raw if isinstance(i, dict)], default=0)
+    top_pearson = max([abs(float(i.get("pearson", 0) or 0)) for i in raw if isinstance(i, dict)], default=0) # FIX: Handle None
     if health_norm >= 0.9 and top_pearson >= 0.8:
-        penalized_stability += 0.15  # Reward perfect health + strong correlations
+        penalized_stability += 0.15  
     
     stability_index = round(max(0, min(100, penalized_stability * 100)), 1)
 
