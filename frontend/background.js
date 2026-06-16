@@ -37,7 +37,10 @@
         document.addEventListener('touchmove', onDocumentTouchMove);
         window.addEventListener('resize', onWindowResize);
     
-        rendererer(onRendererRenderered);
+        // FIX: Only run if THREE exists (in case CDN fails)
+        if (typeof THREE !== 'undefined') {
+            rendererer(onRendererRenderered);
+        }
     }
 
     function rendererer(complete) {
@@ -46,7 +49,6 @@
 
         scene = new THREE.Scene();
 
-        // Modern way to create a circle sprite
         var spriteCanvas = document.createElement('canvas');
         spriteCanvas.width = 32;
         spriteCanvas.height = 32;
@@ -68,7 +70,6 @@
             }
         }
 
-        // Modern WebGL Renderer
         renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
         renderer.setClearColor(0x050810, 1); // Space black background
         renderer.setPixelRatio(window.devicePixelRatio);
@@ -82,11 +83,14 @@
     }
 
     function onRendererRenderered() {
-        stats = new Stats();
-        stats.domElement.style.position = 'absolute';
-        stats.domElement.style.top = stats.domElement.style.right = '0';
-        stats.domElement.style.display = 'none'; 
-        container.appendChild(stats.domElement);
+        // FIX: Only initialize Stats if the library actually loaded from the CDN
+        if (typeof Stats !== 'undefined') {
+            stats = new Stats();
+            stats.domElement.style.position = 'absolute';
+            stats.domElement.style.top = stats.domElement.style.right = '0';
+            stats.domElement.style.display = 'none'; // Keep hidden for production
+            container.appendChild(stats.domElement);
+        }
     }
 
     function onDocumentMouseMove(e) {
@@ -116,19 +120,28 @@
         width = window.innerWidth;
         winHalfX = width / 2;
 
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
-        renderer.setSize(width, height);
+        if (camera && renderer) {
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        }
     }
 
     function animate() {
         requestAnimationFrame(animate);
+        
+        // FIX: If the 3D renderer or scene failed to build, don't crash the thread
+        if (!renderer || !scene) return;
+        
         update();
-        stats.update();
+        
+        // FIX: Only update stats if it was successfully initialized
+        if (stats) {
+            stats.update();
+        }
     }
 
     function update() {
-        // Fast, reactive camera movement
         camera.position.x += (mouseX - camera.position.x) * 0.05;
         camera.position.y += (-mouseY - camera.position.y) * 0.05;
         camera.lookAt(scene.position);
