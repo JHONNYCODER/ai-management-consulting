@@ -11,10 +11,10 @@ def generate_executive_synthesis(state):
     raw = state.get("raw_signals") or []
     
     dom = ct.get("dominant_themes", [])
-    cp = float(ct.get("conflict_pressure", 0))
-    shs = float(stab.get("system_health_score", 50))
-    scs = float(stab.get("signal_confidence_score", 0.5))
-    sl = stab.get("label", "unknown")
+    cp = float(ct.get("conflict_pressure", 0) or 0)   # FIX: Handle None
+    shs = float(stab.get("system_health_score", 50) or 50)  # FIX: Handle None
+    scs = float(stab.get("signal_confidence_score", 0.5) or 0.5)  # FIX: Handle None
+    sl = stab.get("label", "unknown") or "unknown"
     
     shs_n = max(0.0, min(1.0, shs / 100.0))
 
@@ -57,14 +57,14 @@ def generate_executive_synthesis(state):
     scs_n = max(0.0, min(1.0, scs))
     cp_n = max(0.0, min(1.0, cp)) 
     
-    stability = max(0.0, min(1.0, stab.get("stability_index", 60) / 100.0))
+    stability = max(0.0, min(1.0, float(stab.get("stability_index", 60) or 60) / 100.0))  # FIX: Handle None
     signal_conf = scs_n
 
     # ✅ NEW FAIRER FORMULA: Rewards stability and health heavily
     fc = (0.35 * signal_conf) + (0.40 * stability) + (0.25 * shs_n)
 
     # ✅ STRENGTH BOOST: If top correlations are massive, boost confidence!
-    top_pearson = max([abs(float(i.get("pearson", 0))) for i in raw if isinstance(i, dict)], default=0)
+    top_pearson = max([abs(float(i.get("pearson", 0) or 0)) for i in raw if isinstance(i, dict)], default=0)  # FIX: Handle None
     if top_pearson >= 0.8:
         fc += 0.10
     elif top_pearson >= 0.5:
@@ -90,7 +90,7 @@ def generate_structured_reasoning(state):
     raw = state.get("raw_signals") or []
     tm = state.get("theme_metrics", {}) or {}
     exec_s = state.get("executive_synthesis", {}) or {}
-    sys_conf = float(exec_s.get("confidence", 0.5))
+    sys_conf = float(exec_s.get("confidence", 0.5) or 0.5)  # FIX: Handle None
     
     findings = [
         {"finding": i.get("pair", ""), "evidence": {"pearson": i.get("pearson"), "strength": i.get("strength"), "significance": i.get("significance")}, "confidence": sys_conf, "priority": i.get("priority", "low")} 
