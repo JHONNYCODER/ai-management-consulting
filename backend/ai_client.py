@@ -1,6 +1,6 @@
 import os
 import json
-from openai import OpenAI
+from openAI import OpenAI
 from dotenv import load_dotenv
 from analytics_pipeline.logger import logger
 
@@ -8,7 +8,7 @@ from analytics_pipeline.logger import logger
 # LOAD ENV VARIABLES
 # ─────────────────────────────────────────────
 
-load_dotenv() # <-- This loads the .env file automatically!
+load_dotenv()
 
 # ─────────────────────────────────────────────
 # AI CLIENTS SETUP
@@ -20,13 +20,15 @@ groq_client = None
 if GROQ_API_KEY:
     groq_client = OpenAI(
         api_key=GROQ_API_KEY,
-        base_url="https://api.groq.com/openai/v1"
+        base_url="https://api.groq.com/openai/v1",
+        timeout=30.0  # FIX: Prevent infinite blocking on hung API calls
     )
 
 # 2. Ollama Local Client (Fallback)
 ollama_client = OpenAI(
-    api_key="ollama", # Ollama doesn't need a real key, but the library requires one
-    base_url="http://localhost:11434/v1"
+    api_key="ollama", 
+    base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),  # FIX: Configurable for Docker
+    timeout=45.0  # FIX: Local models often take longer to generate
 )
 
 # ─────────────────────────────────────────────
@@ -34,7 +36,8 @@ ollama_client = OpenAI(
 # ─────────────────────────────────────────────
 
 def generate_ai_insight(payload: dict) -> str:
-    system_prompt = "You are a business analyst presenting to a non-technical CEO. Ban the following words: 'structural themes', 'reliability decision frame', 'drivers', 'signals', 'moderate'. Use plain English only."
+    # FIX: Use the system prompt built by the pipeline instead of duplicating/ignoring it
+    system_prompt = payload.get("system_prompt", "You are a helpful business analyst.")
     context = payload.get("context", {})
     recommendations = payload.get("recommendations", {})
     
@@ -62,7 +65,7 @@ def generate_ai_insight(payload: dict) -> str:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message}
                 ],
-                max_tokens=300,
+                max_tokens=800,  # FIX: Increased from 300 to prevent truncated JSON responses
                 temperature=0.7
             )
             logger.info("AI insight generated via Groq (70B) primary inference pipeline")
@@ -78,7 +81,7 @@ def generate_ai_insight(payload: dict) -> str:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message}
             ],
-            max_tokens=300,
+            max_tokens=800,  # FIX: Increased from 300
             temperature=0.7
         )
         logger.info("AI insight generated via Ollama 7B fallback inference pipeline")
