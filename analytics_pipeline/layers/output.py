@@ -17,25 +17,23 @@ def generate_final_insights(state):
     return state
 
 def align_contradictions(state): 
-    # Logic preserved for future implementation
     return state 
 
-# This generates Narratives
 def generate_recommendations(state):
     config = state["config"]
     exec_s = state.get("executive_synthesis", {}) or {}
     taxonomy = state.get("signal_taxonomy", {}) or {}
     correlations = state.get("correlations", {}).get("pairs", [])
     recs = []
-    sys_conf = float(exec_s.get("confidence", 0.3))
+    sys_conf = float(exec_s.get("confidence", 0.3) or 0.3)  # handle None
     
     # 1. Try generating from key drivers
     for dm in exec_s.get("key_drivers_meta", []):
         if not isinstance(dm, dict): continue
         bundle = dm.get("signal_strength_bundle", {})
         vars_list = dm.get("variables", [])
-        avg = float(bundle.get("avg_strength", 0))
-        if avg < 0.2: continue # Lowered threshold to catch more
+        avg = float(bundle.get("avg_strength", 0) or 0)  # handle None
+        if avg < 0.2: continue 
         
         pri = "high" if avg > 0.6 else "medium"
         clean_vars = ", ".join(vars_list[:3]) if vars_list else "these factors"
@@ -60,7 +58,9 @@ def generate_recommendations(state):
             pair_name = pair.get("pair", "")
             strength = pair.get("strength", "weak")
             if strength in ["strong", "very strong", "moderate"] and " vs " in pair_name:
-                v1, v2 = pair_name.split(" vs ")[0].strip(), pair_name.split(" vs ")[1].strip()
+                # FIX: Add maxsplit=1 to prevent butchering column names containing " vs "
+                parts = pair_name.split(" vs ", 1)
+                v1, v2 = parts[0].strip(), parts[1].strip()
                 recs.append({
                     "action": f"Analyze the relationship between {v1} and {v2}",
                     "reason": f"These two metrics have a {strength} correlation. Adjusting one will likely affect the other.",
@@ -70,7 +70,7 @@ def generate_recommendations(state):
                 })
             if len(recs) >= 3: break
 
-    # 3. Absolute Fallback (if data is just completely empty)
+    # 3. Absolute Fallback
     if not recs:
         recs.append({
             "action": "Collect more data",
