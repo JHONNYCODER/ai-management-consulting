@@ -1,6 +1,7 @@
 import os
 import json
-from openAI import OpenAI
+import httpx  # Required for strict connection timeouts
+from openai import OpenAI
 from dotenv import load_dotenv
 from analytics_pipeline.logger import logger
 
@@ -21,14 +22,14 @@ if GROQ_API_KEY:
     groq_client = OpenAI(
         api_key=GROQ_API_KEY,
         base_url="https://api.groq.com/openai/v1",
-        timeout=30.0  # FIX: Prevent infinite blocking on hung API calls
+        timeout=httpx.Timeout(30.0, connect=5.0)  # FIX: 5s to connect, 30s total
     )
 
 # 2. Ollama Local Client (Fallback)
 ollama_client = OpenAI(
     api_key="ollama", 
-    base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),  # FIX: Configurable for Docker
-    timeout=45.0  # FIX: Local models often take longer to generate
+    base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
+    timeout=httpx.Timeout(45.0, connect=3.0)  # FIX: 3s to connect to local, 45s total
 )
 
 # ─────────────────────────────────────────────
@@ -36,7 +37,6 @@ ollama_client = OpenAI(
 # ─────────────────────────────────────────────
 
 def generate_ai_insight(payload: dict) -> str:
-    # FIX: Use the system prompt built by the pipeline instead of duplicating/ignoring it
     system_prompt = payload.get("system_prompt", "You are a helpful business analyst.")
     context = payload.get("context", {})
     recommendations = payload.get("recommendations", {})
@@ -65,7 +65,7 @@ def generate_ai_insight(payload: dict) -> str:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message}
                 ],
-                max_tokens=800,  # FIX: Increased from 300 to prevent truncated JSON responses
+                max_tokens=800,
                 temperature=0.7
             )
             logger.info("AI insight generated via Groq (70B) primary inference pipeline")
@@ -81,7 +81,7 @@ def generate_ai_insight(payload: dict) -> str:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message}
             ],
-            max_tokens=800,  # FIX: Increased from 300
+            max_tokens=800,
             temperature=0.7
         )
         logger.info("AI insight generated via Ollama 7B fallback inference pipeline")
