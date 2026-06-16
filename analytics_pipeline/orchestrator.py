@@ -105,7 +105,7 @@ PIPELINE_REGISTRY = [
     {"name": "narrative_summary", "fn": generate_narrative_summary, "requires": ["executive_synthesis", "analytical_stability"]},
     {"name": "final_insights", "fn": generate_final_insights, "requires": ["executive_synthesis"]},
     {"name": "recommendations", "fn": generate_recommendations, "requires": ["executive_synthesis", "theme_metrics", "signal_taxonomy"]},
-    {"name": "charts", "fn": generate_charts, "requires": ["df", "correlations"]},  # FIX: Moved charts into registry for proper tracing
+    {"name": "charts", "fn": generate_charts, "requires": ["df", "correlations"]},
     {"name": "ai_context", "fn": build_ai_context, "requires": ["executive_synthesis"]},
     {"name": "llm_payload", "fn": build_llm_payload, "requires": ["ai_context"]},
     {"name": "diagnostics", "fn": generate_pipeline_diagnostics, "requires": ["layer_execution_trace"]},
@@ -133,3 +133,53 @@ def execute_pipeline_layer(state: Dict, layer_def: Dict, config: PipelineConfig)
     except Exception as e:
         duration = round((time.time() - start_time) * 1000, 2)
         tb = traceback.format_exc()
+        state["layer_execution_trace"][name] = {"status": "failed", "duration_ms": duration, "error": str(e)}
+        logger.error(f"Layer {name} raw exception: {str(e)}", extra={"layer": name})
+        if config.execution_mode == "fail_fast":
+            raise ComputationError(name, fn.__name__, str(e), False, tb, {}) from e
+        return state
+
+def run_pipeline(file_path: str, config: PipelineConfig = None) -> PipelineExecutionResult:
+    config = config or PipelineConfig()
+    df = pd.read_csv(file_path)
+    state = create_initial_state(df=df, file_path=file_path, config=config)
+    
+    logger.info("=" * 60, extra={"layer": "pipeline"})
+    logger.info(f"Pipeline run initiated: {os.path.basename(file_path)}", extra={"layer": "pipeline"})
+    
+    start_time = time.time()
+    executed, failed = [], []
+    
+    state["output_dir"] = config.output_dir or "uploads"
+    
+    for layer_def in PIPELINE_REGISTRY:
+        try:
+            state = execute_pipeline_layer(state, layer_def, config)
+            executed.append(layer_def["name"])
+        except PipelineError as e:
+            failed.append({"layer": e.layer, "error": e.root_cause})
+            if config.execution_mode == "fail_fast": break
+
+    duration_ms = round((time.time() - start_time) * 1000, 2)
+    state["metadata"] = {
+        "pipeline_version": "2.0.0", 
+        "execution_duration_ms": duration_ms, 
+        "layers_executed": executed, 
+        "layers_failed": failed
+    }
+    
+    status = "SUCCESS" if len(failed) == 0 else "PARTIAL_SUCCESS"
+    logger.info(
+        f"Pipeline run completed: {status} in {duration_ms}ms", 
+        extra={"layer": "pipeline", "duration_ms": duration_ms}
+    )
+    logger.info("=" * 60, extra={"layer": "pipeline"})
+    
+    return PipelineExecutionResult(
+        state=state, 
+        success=len(failed) == 0, 
+        layers_executed=executed, 
+        layers_failed=failed, 
+        execution_duration_ms=duration_ms, 
+        diagnostics=state.get("diagnostics", {})
+    )

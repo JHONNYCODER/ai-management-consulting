@@ -44,7 +44,7 @@ window.uploadFile = async function () {
 
     try {
         // FIX: Use relative URL instead of hardcoded localhost
-        const response = await fetch("/upload", {
+        const response = await fetch("http://127.0.0.1:8000/upload", {
             method: "POST",
             body: formData
         });
