@@ -10,10 +10,9 @@ def safe_list(x):
         return []
     if isinstance(x, (list, tuple, set, np.ndarray, pd.Series)):
         return list(x)
-    # If it's a single dict, int, float, string, etc., wrap it in a list
     return [x]
 
-def _clean_float(value, default=0.0):
+def _clean_float(value, default=None):  # FIX: Default to None instead of 0.0
     try:
         fval = float(value)
         if math.isnan(fval) or math.isinf(fval): 
@@ -23,7 +22,7 @@ def _clean_float(value, default=0.0):
         return default
 
 def classify_correlation_strength(value):
-    v = abs(_clean_float(value, 0.0)) # Ensure it's a clean float first
+    v = abs(_clean_float(value, 0.0)) # Fallback to 0.0 for classification purposes
     if v < 0.2: return "negligible"
     elif v < 0.4: return "weak"
     elif v < 0.6: return "moderate"
@@ -40,7 +39,6 @@ def is_identifier_column(col_name, series):
     if not col_name: return False
     name = col_name.lower().replace("_", "").replace(" ", "")
     
-    # Check common ID keywords
     if any(kw in name for kw in ["id", "uuid", "employeeid", "userid", "customerid", "serial", "code"]):
         return True
     
@@ -50,19 +48,15 @@ def is_identifier_column(col_name, series):
     clean = series.dropna()
     if len(clean) < 3: return False
     
-    # Check cardinality (unique ratio)
     unique_ratio = clean.nunique() / len(clean)
     
-    # If almost every value is unique, it's likely an ID
     if unique_ratio > 0.95:
-        # Check if it's monotonic (1, 2, 3...) OR purely random (UUIDs, hashes)
         try:
             if clean.is_monotonic_increasing or clean.is_monotonic_decreasing:
                 return True
         except Exception:
             pass
         
-        # Catch high-cardinality strings that aren't monotonic (like UUIDs)
         if pd.api.types.is_string_dtype(series) and clean.nunique() == len(clean):
             return True
             
@@ -78,13 +72,11 @@ def _derive_theme_name(variables_list, taxonomy):
     for v in variables_list: 
         all_tags.update(taxonomy.get(v, ["general"]))
         
-    # Priority ordering for themes
     if "compensation" in all_tags: return "Compensation and progression cluster"
     elif "experience" in all_tags: return "Experience and tenure cluster"
     elif "performance" in all_tags: return "Performance and score cluster"
     elif "satisfaction" in all_tags: return "Satisfaction and engagement cluster"
     
-    # Fallback to variable names
     if len(variables_list) >= 2: return f"{variables_list[0]} vs {variables_list[1]}"
     elif variables_list: return variables_list[0]
     return "General patterns cluster"
