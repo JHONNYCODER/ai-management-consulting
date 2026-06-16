@@ -19,6 +19,9 @@ from analytics_pipeline.utils import (
     is_identifier_column,
 )
 
+# FIX: Prevent O(N^2) timeout on wide datasets. Max 50 cols = 1225 pairs.
+MAX_NUMERIC_COLS_FOR_CORRELATION = 50
+
 def generate_profile(state):
     validate_layer_inputs(state, "profile", ["df"])
     df = state["df"]
@@ -38,7 +41,7 @@ def generate_profile(state):
 
 def generate_charts(state):
     df = state.get("df")
-    state["charts"] = [] # Replace single chart with an array of charts
+    state["charts"] = [] 
     state["chart_file"] = None
     state["chart_url"] = None
 
@@ -84,16 +87,20 @@ def generate_charts(state):
             if len(pair_names) == 2:
                 c1, c2 = pair_names[0].strip(), pair_names[1].strip()
                 if c1 in df.columns and c2 in df.columns:
-                    sample_df = df[[c1, c2]].dropna().sample(n=min(50, len(df)), random_state=42)
-                    state["charts"].append({
-                        "title": f"{c1} vs {c2}",
-                        "type": "scatter",
-                        "labels": [],
-                        "datasets": [{
-                            "label": f"r={top_pair.get('pearson', 0)}",
-                            "data": [{ "x": float(row[c1]), "y": float(row[c2]) } for _, row in sample_df.iterrows()]
-                        }]
-                    })
+                    sample_df = df[[c1, c2]].dropna()
+                    # FIX: Prevent ValueError crash if dropna reduces size below sample target
+                    sample_n = min(50, len(sample_df))
+                    if sample_n > 0:
+                        sample_df = sample_df.sample(n=sample_n, random_state=42)
+                        state["charts"].append({
+                            "title": f"{c1} vs {c2}",
+                            "type": "scatter",
+                            "labels": [],
+                            "datasets": [{
+                                "label": f"r={top_pair.get('pearson', 0)}",
+                                "data": [{ "x": float(row[c1]), "y": float(row[c2]) } for _, row in sample_df.iterrows()]
+                            }]
+                        })
     except Exception as e:
         logger.error(f"Chart generation failed: {e}", extra={"layer": "chart"})
 
@@ -101,26 +108,31 @@ def generate_charts(state):
 
 def generate_correlation_analysis(state):
     config = state["config"]
-    cache = state["pipeline_cache"]
     df = state.get("df")
     results = []
     if df is None: state["correlations"] = {"pairs": results}; return state
     
-    numeric_df = cache.get_or_compute("numeric_df", lambda: df.select_dtypes(include=[np.number]).copy())
+    numeric_df = df.select_dtypes(include=[np.number]).copy()
     filtered_cols = [c for c in numeric_df.columns if not is_identifier_column(c, numeric_df[c])]
     numeric_df = numeric_df[filtered_cols]
+    
+    # FIX: Truncate columns to prevent O(N^2) HTTP timeout
+    if numeric_df.shape[1] > MAX_NUMERIC_COLS_FOR_CORRELATION:
+        logger.warning(f"Truncating correlation matrix from {numeric_df.shape[1]} to {MAX_NUMERIC_COLS_FOR_CORRELATION} cols to prevent timeout", extra={"layer": "correlations"})
+        numeric_df = numeric_df.iloc[:, :MAX_NUMERIC_COLS_FOR_CORRELATION]
     
     if numeric_df.shape[1] < 2: state["correlations"] = {"pairs": results}; return state
     
     pearson_corr = numeric_df.corr(method="pearson")
     for col1, col2 in itertools.combinations(numeric_df.columns, 2):
         val = pearson_corr.loc[col1, col2]
-        if pd.isna(val): continue
+        if pd.isna(val): continue  # FIX: Skip NaN correlations instead of converting to 0.0
         try:
             c1, c2 = numeric_df[col1].dropna(), numeric_df[col2].dropna()
             idx = c1.index.intersection(c2.index)
             p_value = pearsonr(c1.loc[idx], c2.loc[idx])[1] if len(idx) >= 3 else 1.0
-        except: p_value = 1.0
+        except Exception:  # FIX: Never bare 'except'
+            p_value = 1.0
         
         significance = "not significant"
         if p_value < 0.01: significance = "highly significant"
@@ -141,13 +153,11 @@ def generate_dataset_health(state):
     missing = int(df.isna().sum().sum())
     completeness = 1 - (missing / total_cells if total_cells > 0 else 0)
     
-    # FIX: Removed flawed anomaly math here. Let detect_anomalies() handle it.
-    # We start anomaly_count at 0, it will be updated later in the pipeline.
     state["dataset_health"] = {
         "completeness_score": round(completeness, 3), 
         "anomaly_count": 0, 
         "dominance_issues": 0, 
-        "health_score": round(max(0.0, min(100.0, completeness * 100)), 2) # Removed penalty for now
+        "health_score": round(max(0.0, min(100.0, completeness * 100)), 2)
     }
     return state
 
@@ -218,7 +228,6 @@ def calibrate_confidence(state):
         base = float(item.get("confidence", 0.5))
         score = base * config.strength_bonuses.get(item.get("strength", "weak"), 1.0)
         
-        # FIX: n will never be None. Simplified logic.
         size_multiplier = (
             0.65 if n < 5 else
             0.78 if n < 10 else
