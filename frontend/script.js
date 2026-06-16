@@ -1,5 +1,21 @@
 let chartInstances = [];
 
+// ─────────────────────────────────────────────
+// XSS SANITIZATION HELPER
+// ─────────────────────────────────────────────
+function escapeHTML(str) {
+    if (typeof str !== 'string') return str;
+    return str.replace(/[&<>'"]/g, 
+        tag => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            "'": '&#39;',
+            '"': '&quot;'
+        }[tag] || tag)
+    );
+}
+
 window.uploadFile = async function () {
     const fileInput = document.getElementById("fileInput");
     const uploadBtn = document.getElementById("uploadBtn");
@@ -27,7 +43,8 @@ window.uploadFile = async function () {
     formData.append("file", fileInput.files[0]);
 
     try {
-        const response = await fetch("http://127.0.0.1:8000/upload", {
+        // FIX: Use relative URL instead of hardcoded localhost
+        const response = await fetch("/upload", {
             method: "POST",
             body: formData
         });
@@ -35,7 +52,9 @@ window.uploadFile = async function () {
         if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 
         const data = await response.json();
-        if (data.status !== "success") throw new Error(data.message || "Analysis failed");
+        
+        // FIX: Handle partial_success so the UI doesn't discard valid partial data
+        if (data.status === "error") throw new Error(data.message || "Analysis failed");
 
         const result = data.data;
         renderDashboard(result);
@@ -48,9 +67,9 @@ window.uploadFile = async function () {
         // ✅ BUTTERY SMOOTH AUTO-SCROLL
         setTimeout(() => {
             const element = document.getElementById("stats-grid");
-            const y = element.getBoundingClientRect().top + window.pageYOffset - 30; // 30px buffer from top
+            const y = element.getBoundingClientRect().top + window.pageYOffset - 30;
             window.scrollTo({ top: y, behavior: 'smooth' });
-        }, 300); // 300ms delay ensures DOM is fully painted
+        }, 300);
 
     } catch (error) {
         console.error("Upload failed:", error);
@@ -61,12 +80,9 @@ window.uploadFile = async function () {
     } finally {
         uploadBtn.disabled = false;
         loader.classList.add("hidden");
-        
-        // ✨ FIX: Reset file input so the user can upload the SAME file again!
         fileInput.value = ""; 
         selectBtn.classList.remove("hidden");
         uploadBtn.classList.add("hidden");
-        // fileNameDisplay.textContent = ""; // Left commented out so the name stays visible!
     }
 };
 
@@ -79,10 +95,9 @@ function renderDashboard(d) {
     const healthEl = document.getElementById("health-val");
     animateValue(healthEl, 0, healthScore, 1200);
     
-    // ✅ DYNAMIC COLOR (Health)
-    if (healthScore >= 75) healthEl.style.color = "#10b981"; // Green
-    else if (healthScore >= 40) healthEl.style.color = "#f59e0b"; // Yellow
-    else healthEl.style.color = "#ef4444"; // Red
+    if (healthScore >= 75) healthEl.style.color = "#10b981";
+    else if (healthScore >= 40) healthEl.style.color = "#f59e0b";
+    else healthEl.style.color = "#ef4444";
     
     document.getElementById("health-bar").style.width = `${healthScore}%`;
 
@@ -99,15 +114,14 @@ function renderDashboard(d) {
     const confEl = document.getElementById("confidence-val");
     animateValue(confEl, 0, parseFloat(confPercent), 1200, '%');
     
-    // ✅ DYNAMIC COLOR (Confidence)
     const confNum = parseFloat(confPercent);
-    if (confNum >= 70) confEl.style.color = "#10b981"; // Green
-    else if (confNum >= 40) confEl.style.color = "#f59e0b"; // Yellow
-    else confEl.style.color = "#ef4444"; // Red
+    if (confNum >= 70) confEl.style.color = "#10b981";
+    else if (confNum >= 40) confEl.style.color = "#f59e0b";
+    else confEl.style.color = "#ef4444";
     
     document.getElementById("confidence-bar").style.width = `${confPercent}%`;
 
-    // 2. AI Narrative
+    // 2. AI Narrative (XSS PATCHED using escapeHTML)
     const narrativeEl = document.getElementById("ai-narrative");
     const narrativeData = d.narrative_summary?.full_narrative || "";
     
@@ -116,8 +130,8 @@ function renderDashboard(d) {
             narrativeEl.innerHTML = `<ul class="ai-points-list">` + 
                 narrativeData.map(p => `
                     <li class="ai-point-item">
-                        <div class="ai-analysis-text">📊 ${p.analysis || ''}</div>
-                        <div class="ai-suggestion-text">${p.suggestion || ''}</div>
+                        <div class="ai-analysis-text">📊 ${escapeHTML(p.analysis || '')}</div>
+                        <div class="ai-suggestion-text">${escapeHTML(p.suggestion || '')}</div>
                     </li>
                 `).join("") + `</ul>`;
         } else {
@@ -128,15 +142,13 @@ function renderDashboard(d) {
     // 3. Animated Charts Grid
     const chartsContainer = document.getElementById("charts-container");
     const chartPlaceholder = document.getElementById("chart-placeholder");
-    const mainGrid = document.getElementById("results-container"); // ✅ GRAB THE GRID
+    const mainGrid = document.getElementById("results-container");
 
     if (chartsContainer) {
-        // Destroy old charts if they exist
         chartInstances.forEach(c => c.destroy());
         chartInstances = [];
         chartsContainer.innerHTML = '';
 
-        // ✅ SMART LAYOUT: Check if 1 chart or multiple
         if (d.charts && d.charts.length === 1) {
             mainGrid.classList.add("single-chart-layout");
         } else {
@@ -147,15 +159,12 @@ function renderDashboard(d) {
             chartPlaceholder.style.display = "none";
 
             d.charts.forEach((chartData, index) => {
-                // Create box wrapper
                 const box = document.createElement('div');
                 box.className = 'chart-box';
                 
-                // Create title
                 const title = document.createElement('h5');
                 title.textContent = chartData.title || `Chart ${index + 1}`;
                 
-                // Create canvas
                 const canvas = document.createElement('canvas');
                 canvas.id = `chart-${index}`;
                 
@@ -163,7 +172,6 @@ function renderDashboard(d) {
                 box.appendChild(canvas);
                 chartsContainer.appendChild(box);
 
-                // Format datasets based on type
                 const type = chartData.type || 'line';
                 let formattedDatasets = [];
 
@@ -202,7 +210,6 @@ function renderDashboard(d) {
                     }));
                 }
 
-                // Initialize Chart.js
                 const ctx = canvas.getContext('2d');
                 const newChart = new Chart(ctx, {
                     type: type,
@@ -250,17 +257,17 @@ function renderDashboard(d) {
         }
     }
 
-    // 4. Correlations Table
+    // 4. Correlations Table (XSS PATCHED using escapeHTML)
     const tbody = document.querySelector("#signals-table tbody");
     const pairs = d.correlations?.pairs || [];
     if (tbody) {
         if (pairs.length > 0) {
             tbody.innerHTML = pairs.slice(0, 6).map(c => `
                 <tr>
-                    <td><strong>${c.pair}</strong></td>
-                    <td>${c.pearson}</td>
-                    <td><span class="badge ${getStrengthClass(c.strength)}">${c.strength}</span></td>
-                    <td>${c.significance}</td>
+                    <td><strong>${escapeHTML(c.pair)}</strong></td>
+                    <td>${escapeHTML(c.pearson)}</td>
+                    <td><span class="badge ${getStrengthClass(c.strength)}">${escapeHTML(c.strength)}</span></td>
+                    <td>${escapeHTML(c.significance)}</td>
                 </tr>
             `).join("");
         } else {
@@ -268,23 +275,23 @@ function renderDashboard(d) {
         }
     }
 
-    // 5. Recommendations
+    // 5. Recommendations (XSS PATCHED using escapeHTML)
     const recsList = document.getElementById("recommendations-list");
     const recs = d.recommendations?.recommendations || [];
     if (recsList) {
         if (recs.length > 0) {
             recsList.innerHTML = recs.map(r => `
                 <div class="rec-item">
-                    <span class="badge ${r.priority.toLowerCase()}">${r.priority}</span>
-                    <strong>${r.action}</strong>
-                    <div class="reason">${r.reason}</div>
+                    <span class="badge ${r.priority.toLowerCase()}">${escapeHTML(r.priority)}</span>
+                    <strong>${escapeHTML(r.action)}</strong>
+                    <div class="reason">${escapeHTML(r.reason)}</div>
                 </div>
             `).join("");
         } else {
             recsList.innerHTML = `<p class="placeholder-text">No recommendations generated.</p>`;
         }
     }
-} // ✅✅✅ THE MISSING BRACKET WAS HERE!
+} 
 
 function getStrengthClass(strength) {
     if (["strong", "very strong"].includes(strength)) return "high";
