@@ -5,6 +5,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler  # FIX: Import RotatingFileHandler
 
 class JSONFormatter(logging.Formatter):
     def format(self, record):
@@ -22,13 +23,10 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_record)
 
 # ── PATH SETUP ──
-# Assumes this file is: project_root/analytics_pipeline/logger.py
-# Targets: project_root/backend/logs/pipeline.log
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOG_DIR = os.path.join(PROJECT_ROOT, "backend", "logs")
 LOG_FILE = os.path.join(LOG_DIR, "pipeline.log")
 
-# Create log directory if it doesn't exist
 os.makedirs(LOG_DIR, exist_ok=True)
 
 logger = logging.getLogger("analytics_pipeline")
@@ -37,8 +35,14 @@ logger = logging.getLogger("analytics_pipeline")
 if logger.handlers:
     logger.handlers.clear()
 
-# 1. FILE HANDLER (DEBUG level - catches EVERY layer execution log)
-file_handler = logging.FileHandler(LOG_FILE, encoding='utf-8')
+# 1. FILE HANDLER (DEBUG level - Rotating to prevent disk fill-up)
+# FIX: Max 5MB per file, keep 3 backups. Total max disk usage ~20MB.
+file_handler = RotatingFileHandler(
+    LOG_FILE, 
+    maxBytes=5*1024*1024, 
+    backupCount=3,
+    encoding='utf-8'
+)
 file_handler.setLevel(logging.DEBUG)
 file_handler.setFormatter(JSONFormatter())
 logger.addHandler(file_handler)
