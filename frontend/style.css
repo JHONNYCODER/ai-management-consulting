@@ -331,6 +331,8 @@ body.space-theme {
     grid-column: span 2;
     border-left: 4px solid var(--purple);
     background: linear-gradient(90deg, rgba(188, 19, 254, 0.05), transparent);
+    /* ✅ MAKE AI CARD MORE OPAQUE FOR READABILITY */
+    background-color: rgba(9, 19, 41, 0.92) !important;
 }
 
 .typewriter {
