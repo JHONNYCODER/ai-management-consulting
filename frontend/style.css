@@ -259,6 +259,59 @@ body.space-theme {
     margin: 0.5rem 0;
 }
 
+/* ✅ SYMMETRICAL STAT CARD LAYOUT */
+.stat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    min-height: 45px;
+    /* Aligns height with sibling cards */
+}
+
+.stability-tag {
+    font-size: 0.75rem;
+    font-weight: 800;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: rgba(148, 163, 184, 0.1);
+    color: var(--text-dim);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+/* Tag Color Variants */
+.stability-tag.high {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--success);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+.stability-tag.moderate {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--warning);
+    border-color: rgba(245, 158, 11, 0.3);
+}
+
+.stability-tag.guarded {
+    background: rgba(249, 115, 22, 0.15);
+    color: #f97316;
+    border-color: rgba(249, 115, 22, 0.3);
+}
+
+.stability-tag.low {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--danger);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.stability-tag.unknown {
+    background: rgba(148, 163, 184, 0.1);
+    color: var(--text-dim);
+    border-color: rgba(148, 163, 184, 0.2);
+}
+
 .progress-bar {
     height: 6px;
     background: rgba(255, 255, 255, 0.1);
@@ -271,33 +324,6 @@ body.space-theme {
     height: 100%;
     background: linear-gradient(90deg, var(--cyan), var(--purple));
     transition: width 1s ease;
-}
-
-.stability-tag {
-    display: inline-block;
-    padding: 0.3rem 0.8rem;
-    border-radius: 20px;
-    font-size: 0.8rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    margin-top: 0.5rem;
-    background: rgba(245, 158, 11, 0.2);
-    color: var(--warning);
-}
-
-.stability-tag.high {
-    background: rgba(16, 185, 129, 0.2);
-    color: var(--success);
-}
-
-.stability-tag.moderate {
-    background: rgba(245, 158, 11, 0.2);
-    color: var(--warning);
-}
-
-.stability-tag.low {
-    background: rgba(239, 68, 68, 0.2);
-    color: var(--danger);
 }
 
 /* AI Section - Full Width */

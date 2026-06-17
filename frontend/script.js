@@ -102,7 +102,16 @@ function renderDashboard(d) {
     document.getElementById("health-bar").style.width = `${healthScore}%`;
 
     const stabilityIndex = d.analytical_stability?.stability_index ?? 0;
-    animateValue(document.getElementById("stability-val"), 0, stabilityIndex, 1200);
+    const stabValEl = document.getElementById("stability-val");
+    animateValue(stabValEl, 0, stabilityIndex, 1200);
+    
+    // ✅ DYNAMIC COLOR (Stability)
+    if (stabilityIndex >= 80) stabValEl.style.color = "#10b981"; // Green
+    else if (stabilityIndex >= 60) stabValEl.style.color = "#f59e0b"; // Yellow
+    else stabValEl.style.color = "#ef4444"; // Red
+    
+    // ✅ STABILITY PROGRESS BAR
+    document.getElementById("stability-bar").style.width = `${stabilityIndex}%`;
     
     const stabLabel = d.analytical_stability?.label?.toLowerCase() || "unknown";
     const stabElement = document.getElementById("stability-label");

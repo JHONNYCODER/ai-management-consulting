@@ -101,7 +101,7 @@ ai-management-consulting/
 ├── frontend/                 # Client-side application
 │   ├── background.js         # Three.js interactive 3D constellation
 │   ├── index.html            # Main dashboard UI structure
-│   ├── script.js            # API calls, DOM rendering, Chart.js logic
+│   ├── script.js             # API calls, DOM rendering, Chart.js logic
 │   └── style.css             # Space theme, glassmorphism, grid layouts
 │
 ├── backend/                  # Server-side application
@@ -126,7 +126,7 @@ ai-management-consulting/
     │   ├── decision.py       # Executive synthesis & confidence scoring
     │   ├── normalization.py  # Signal scaling & taxonomy
     │   ├── output.py         # Narrative, insights & recommendations
-    │   ├── raw_computation.py# Profiling, charts, correlations, health
+    │   ├── raw_computation.py # Profiling, charts, correlations, health
     │   ├── reasoning.py      # Analytical stability & cross-theme logic
     │   └── structuring.py    # Contextual synthesis & theme metrics
     │
@@ -139,7 +139,6 @@ ai-management-consulting/
     │
     ├── __init__.py
     ├── ai_readiness.py       # LLM context builder
-    ├── cache.py              # Computation caching utility
     ├── config.py             # Pipeline settings & weight configurations
     ├── exceptions.py         # Custom pipeline error classes
     ├── logger.py             # Dual-handler JSON logger setup

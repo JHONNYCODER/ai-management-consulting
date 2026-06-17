@@ -1,7 +1,6 @@
 from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import shutil
 import os
 import json
 import uuid
