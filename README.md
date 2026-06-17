@@ -49,6 +49,7 @@ Results are rendered via animated charts, color-coded diagnostic scores, and cle
 - **Smart Metric Scoring:** Dynamic health, stability, and confidence scores that change color (Green/Yellow/Red) based on data quality.
 - **Seamless UX:** Drag-and-drop CSV upload, smooth auto-scrolling to results, and animated number counters.
 - **Structured Logging:** Pipeline execution logs are silently written to `backend/logs/pipeline.log` in structured JSON format, keeping the terminal clean while preserving deep debuggability.
+- **Production-Ready Security & Reliability:** Includes DOM/XSS sanitization, secure UUID file naming, strict API timeouts, robust NaN/Infinity handling in the math pipeline, and rotating log management to prevent disk overflow.
 
 ---
 
@@ -105,20 +106,19 @@ ai-management-consulting/
 │   └── style.css             # Space theme, glassmorphism, grid layouts
 │
 ├── backend/                  # Server-side application
+│   ├── charts/               # Generated pipeline chart outputs (served securely)
 │   ├── logs/
-│   │   └── pipeline.log      # Structured JSON pipeline execution logs
+│   │   └── pipeline.log      # Structured JSON pipeline execution logs (Rotating)
 │   │
 │   ├── schemas/
 │   │   └── analytics_response.py  # Pydantic response models
 │   │
-│   ├── uploads/              # Uploaded CSV dataset storage
-│   ├── venv/                 # Python virtual environment
-│   │
+│   ├── uploads/              # Uploaded CSV dataset storage (not publicly served)
 │   ├── .env                  # Environment variables (Groq API Key)
-│   ├── ai_client.py          # Groq / Ollama LLM integration
-│   ├── main.py               # FastAPI app entrypoint & routes
-│   ├── mappers.py            # Internal state -> API response mapper
-│   └── requirements.txt      # Python dependencies
+│   ├── ai_client.py          # Groq / Ollama LLM integration (w/ Timeouts)
+│   ├── main.py               # FastAPI app entrypoint, routes, & static hosting
+│   ├── mappers.py            # Internal state -> API response mapper (w/ NaN sanitization)
+│   └── requirements.txt      # Python dependencies (Pinned versions)
 │
 └── analytics_pipeline/       # Core analytics engine
     ├── layers/
@@ -183,18 +183,25 @@ pip install -r requirements.txt
 ```
 
 ### 5. Configure Environment Variables
-Create a `.env` file in the root directory and add your Groq API key:
+Create a `.env` file in the `backend/` directory and add your Groq API key:
 ```env
 GROQ_API_KEY=gsk_your_api_key_here
 ```
 *(If you don't have a Groq key, the system will automatically fall back to Ollama if it's running locally).*
 
+#### Optional: Custom Ollama URL
+
+Only configure this if Ollama is running on a non-default endpoint (for example, inside Docker).
+
+```env
+OLLAMA_BASE_URL=http://localhost:11434/v1
+```
 ---
 
 ## 💻 Running the Application
 
 ### Start the Backend Server
-From the backend/ directory (with your virtual environment activated) run:
+From the **root directory** of the project (with your virtual environment activated) run:
 ```bash
 uvicorn backend.main:app --reload --port 8000
 ```
