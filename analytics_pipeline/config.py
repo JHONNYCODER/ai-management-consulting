@@ -6,7 +6,6 @@ class PipelineConfig:
     cluster_signal_threshold: float = 0.25
     weak_signal_filter: float = 0.10
     output_dir: Optional[str] = None  
-
     # Enforce valid strings using Literal
     confidence_scale: Literal["0_1", "-1_1"] = "0_1"
     signal_range: Literal["-1_to_1", "0_1"] = "-1_to_1"

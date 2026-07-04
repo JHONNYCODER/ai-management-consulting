@@ -56,11 +56,11 @@ def generate_ai_insight(payload: dict) -> str:
         '[{"analysis": "Sales dropped 10% last month.", "suggestion": "Renew the expired ad campaign immediately."}]'
     )
 
-    # --- ATTEMPT 1: GROQ (70B Brain) ---
+    # --- ATTEMPT 1: GROQ (120B Brain) ---
     if groq_client:
         try:
             response = groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="openai/gpt-oss-120b",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message}
@@ -68,7 +68,7 @@ def generate_ai_insight(payload: dict) -> str:
                 max_tokens=800,
                 temperature=0.7
             )
-            logger.info("AI insight generated via Groq (70B) primary inference pipeline")
+            logger.info("AI insight generated via Groq GPT-OSS 120B primary inference pipeline")
             return response.choices[0].message.content
         except Exception as e:
             logger.warning(f"Groq failed, falling back to Ollama: {e}")

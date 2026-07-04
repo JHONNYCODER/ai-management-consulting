@@ -18,7 +18,7 @@ An enterprise-grade analytics platform that transforms raw CSV data into actiona
 ## 📖 Overview
 Traditional data analysis tools require manual querying, static charts, and hours of interpretation. The AI Management Consulting System automates this entire workflow.
 
-A user uploads a CSV dataset through a futuristic, glassmorphic web interface. The backend orchestrates a rigorous 24-layer pipeline—ranging from statistical correlation analysis and anomaly detection to theme extraction and conflict resolution. The refined signals are then passed to a Large Language Model (Groq's Llama 3.3 70B or local Ollama), which generates a clear, two-level executive summary: what the data means and what action to take.
+A user uploads a CSV dataset through a futuristic, glassmorphic web interface. The backend orchestrates a rigorous 24-layer pipeline—ranging from statistical correlation analysis and anomaly detection to theme extraction and conflict resolution. The refined signals are then passed to a Large Language Model (Groq's OpenAI GPT-OSS 120B or local Ollama), which generates a clear, two-level executive summary: what the data means and what action to take.
 
 Results are rendered via animated charts, color-coded diagnostic scores, and clean UI components.
 
@@ -43,7 +43,7 @@ Results are rendered via animated charts, color-coded diagnostic scores, and cle
 ## ✨ Key Features
 
 - **24-Layer Analytics Pipeline:** End-to-end processing covering profiling, Pearson correlations, anomaly detection, stability calibration, cross-theme reasoning, and executive synthesis.
-- **LLM-Powered Insights:** Generates jargon free, 2-level actionable insights (Analysis + Suggestion) using Groq (Llama 3.3 70B) or local Ollama (local fallback).
+- **LLM-Powered Insights:** Generates jargon free, 2-level actionable insights (Analysis + Suggestion) using Groq (OpenAI GPT-OSS 120B) or local Ollama (local fallback).
 - **Interactive 3D UI:** A dynamic, mouse-reactive particle constellation built with Three.js.
 - **Animated Data Visualizations:** Auto-detects data types to generate smooth Area Charts (continuous data), Neon Doughnut Charts (categorical data), and Scatter Plots with trend lines (correlations) via Chart.js.
 - **Smart Metric Scoring:** Dynamic health, stability, and confidence scores that change color (Green/Yellow/Red) based on data quality.
@@ -85,7 +85,7 @@ Results are rendered via animated charts, color-coded diagnostic scores, and cle
 | Layer        | Technology                                                                 |
 |---------------|----------------------------------------------------------------------------|
 | **Backend**  | Python 3.10+, FastAPI, Pydantic, Pandas, NumPy, SciPy                     |
-| **AI/LLM**   | Groq API (Llama 3.3 70B), Ollama (Qwen 2.5 7B - Fallback)                 |
+| **AI/LLM**   | Groq API (OpenAI GPT-OSS 120B), Ollama (Qwen 2.5 7B - Fallback)                 |
 | **Frontend** | Vanilla JavaScript, HTML5, CSS3 (Glassmorphism), Three.js, Chart.js       |
 | **Tooling**  | Uvicorn, python-dotenv, Git                                                |
 
